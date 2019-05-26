@@ -759,15 +759,7 @@ dynlm( PM_US.Post~
           L(precipitation, c(0, 1, 7, 30, 365))+
           L(Iprec, c(0, 1, 7, 30, 365)), data = dailyData) %>% summary() # 0.45
 
-# Daily - Values (Optimized)
-dynlm( PM_US.Post ~ 
-          L(PM_US.Post, c(1,10)) +
-          L(HUMI, c(1, 365))+
-          L(TEMP)+
-          Iws+ 
-          L(Iws)+
-          precipitation + 
-          L(Iprec, 365), data = dailyData) %>% summary() # 0.45
+
 
 # Daily - Values only from lag(1)
 dynlm( PM_US.Post ~ L(PM_US.Post), data = dailyData) %>% summary() # 0.35
@@ -810,57 +802,54 @@ dynlm( PM_US.Post~
          L(Iprec, c(0, 1, 4, 4 * 12)), data = weeklyData) %>% summary() # 0.5228
 
 
-#########################DO NOT INCLUDE - nie wiem do czego to? ###################################################
+############ ARDL v2 - Final models ##############
 
-#Creating Time Series
-data3 <- ts(dane$PM_US.Post, frequency=365, start = c(2016,1,1,1), end = c(2018,1,1,1))
+# Hourly - Values (Optimized)
+dynlm( PM_US.Post ~ 
+         L(PM_US.Post) +
+         L(DEWP, c(0, 1, 24 * 365)) +
+         L(HUMI, c(0, 1))+
+         L(PRES, c(24 * 30))+
+         L(TEMP, c(0, 1, 24 * 7))+
+         Iws, data = data2) %>% summary() # 0.89
 
-#Automatic differentiations needed
-nsdiffs(data3)
 
-#fitting best ARIMA
-acf(data3)
-pacf(data3)
+# Daily - Values (Optimized)
+dynlm( PM_US.Post ~ 
+         L(PM_US.Post, c(1, 10)) +
+         L(HUMI) +
+         L(TEMP) +
+         Iws+ 
+         L(Iws)+
+         precipitation, data = dailyData) %>% summary() # 0.44
 
-#Modeling first ARIMA
-arima <- auto.arima(data3, trace = T, seasonal = TRUE, test = 'kpss', ic = 'bic')
 
-#Decomposing time series with respect to seasonality
-decomp <- stl(data3, s.window='periodic')
-decomposition <- decompose(data3)
-deseasonal_cnt <- seasadj(decomp)
+# Weekly - Values (Optimized)
+dynlm( PM_US.Post~ 
+         L(PM_US.Post) +
+         DEWP +
+         L(DEWP, 4) +
+         PRES +
+         L(TEMP)+
+         Iws +
+         precipitation + 
+         L(precipitation, 4), data = weeklyData) %>% summary() # 0.54
 
-#Plotting results
-plot(decomp)
-plot(decomposition)
-plot(deseasonal_cnt)
 
-#Fitting arima for deseasoned time series
-acf(deseasonal_cnt)
-pacf(deseasonal_cnt)
 
-arima.decomposed <- auto.arima(deseasonal_cnt, trace = T, seasonal = FALSE, test = 'kpss', ic = 'bic')
 
-#ADF Test for stationarity in deasesoned data
-adf.test(deseasonal_cnt, alternative='stationary')
 
-#display Time series for modeled ARIMAs
-tsdisplay(residuals(arima), lag.max=32, main='1,1,0 Model Residuals')
-tsdisplay(residuals(arima.decomposed), lag.max=32, main='1,1,0 Model Residuals')
 
-#ACF and PACF by ARIMA Residuals
-acf(arima$residuals, lag.max = 32)
-pacf(arima$residuals, lag.max = 32)
 
-#Tests
-jotest=ca.jo(data2, type="trace", K=2, ecdet="none", spec="longrun")
-summary(jotest)
 
-source('function_testdf.R')
-   
-  testdf(variable = diff(arima), # vector tested
-         max.augmentations = 5,  # maximum number of augmentations added
-         max.order=5)           # maximum order of residual lags for BG test
 
-###################################################################################
+
+
+
+
+
+
+
+
+
 
