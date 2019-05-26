@@ -50,10 +50,11 @@ plot(data2$Iprec, type = 'l', main = "Iprec")
 plot(data2$season, type = 'l', main = "season")
 
 
-
-
-
-
+#### Convert to daily
+periodicity(data2)
+dailyData <- apply.daily(data2, mean) # Możemy tego używać w miejsce data2
+plot(as.zoo(dailyData))
+periodicity(dailyData)
 
 #################### SARIMA - KORNEL ######################
 #Correlations
