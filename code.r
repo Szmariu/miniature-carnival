@@ -40,6 +40,7 @@ write.csv(as.data.frame(data2),"data/data2.csv")
 
 data3 <- ts(data2[,c('PM_US.Post', "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec' )], frequency = 24)
 
+
 ##PLOTTING to glimpse the data
 
 autoplot(data2$PM_US.Post, ts.colour = 'coral4', xlab = 'Year', ylab = 'Values')
@@ -49,22 +50,36 @@ z <- autoplot(data2$HUMI, main = "Humidity (%)", ts.colour = 'grey34', xlab = 'Y
 t <- autoplot(data2$PRES, main = "Pressure (hPa)", ts.colour = 'goldenrod3', xlab = 'Year', ylab = 'Values')
 
 figure <- multi_panel_figure(columns = 2, rows = 2, panel_label_type = "none")
-
-periodicity(dailyData)
-
 figure %<>%
   fill_panel(x, column = 1, row = 1) %>%
   fill_panel(y, column = 2, row = 1) %>%
   fill_panel(z, column = 1, row = 2) %>%
   fill_panel(t, column = 2, row = 2)
 print(figure)
+autoplot(data2[,c('Iws', 'Iprec', 'precipitation')], xlab = 'Year', ylab = 'Values', ts.colour = 'black')
+
+
 #### Convert to daily
 periodicity(data2)
 dailyData <- apply.daily(data2, mean) # Możemy tego używać w miejsce data2
 plot(as.zoo(dailyData))
 periodicity(dailyData)
 
-autoplot(data2[,c('Iws', 'Iprec', 'precipitation')], xlab = 'Year', ylab = 'Values', ts.colour = 'black')
+weeklyData <- apply.weekly(data2, mean) # Możemy tego używać w miejsce data2
+plot(as.zoo(weeklyData))
+periodicity(weeklyData)
+
+# Generate the 
+tbats <-  dailyData$PM_US.Post %>%
+  msts(seasonal.period=c(7,30,365.25)) %>% 
+  tbats() 
+
+plot(tbats)
+
+tbats %>% 
+  tbats.components() %>% 
+  autoplot()
+
 
 
 #################### SARIMA - KORNEL ######################
@@ -209,6 +224,7 @@ print(ARIMA.predictions.model.stats)
 
 ######### ARDL - sesonally adjusted monthly data from jDemetra (MICHALINA)
 
+# Loading the data from jDemetra
 PM <- read.csv('pm.txt', sep = "\t", dec = ',')
 tsPM <- ts(PM[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
@@ -628,116 +644,173 @@ autoplot(ARDL18)
 dane.zoo <- as.zoo(data2)
 plot(dane.zoo)
 
-m.season <- msts(data2$PM_US.Post,seasonal.period=c(7,30,365.25),start = c(2012,1,1,1), end = c(2018,1,1,1))
-#m.season <- msts(data2$PM_US.Post,seasonal.period=c(24 , 24 * 7, 24 * 30,24 * 365.25))
-
-#tbats <- tbats(m.season, use.box.cox = TRUE, use.trend = TRUE, use.damped.trend = TRUE, seasonal.periods = c(24 , 24 * 7, 24 * 30, 24 * 365.25), use.parallel = TRUE, num.cores = NULL)
-#plot(tbats)
-
-#tbats2 <- tbats.components(tbats)
-#View(tbats2)
-#plot(tbats2)
-
 
 source("function_testdf.R")
 
-testdf(variable = data2$PM_US.Post, # vector tested
-       max.augmentations = 3, max.order=5)  # maximum number of augmentations added
+a <- testdf(variable = data2$PM_US.Post, max.augmentations = 10, max.order=10)
 
-testdf(variable = diff(USA[,c("consumption")]), # vector tested
-       max.augmentations = 3,  # maximum number of augmentations added
-       max.order=5)           # maximum order of residual lags for BG test
+b <- testdf(variable = diff(data2$PM_US.Post), max.augmentations = 3, max.order=5)           
 
-# Na różnicach
-ARDL <- dynlm( d(PM_US.Post) ~ 
-                 #d(PM_US.Post, 2) +
-                 L(d(PM_US.Post), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(DEWP) + 
-                 d(DEWP, 24) + 
-                 d(DEWP, 24 * 7) + 
-                 d(DEWP, 24 * 30) + 
-                 d(DEWP, 24 * 365) + 
-                 L(d(DEWP), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(HUMI) + 
-                 d(HUMI, 24) + 
-                 d(HUMI, 24 * 7) + 
-                 d(HUMI, 24 * 30) + 
-                 d(HUMI, 24 * 365) + 
-                 L(d(HUMI), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(PRES) + 
-                 d(PRES, 24) + 
-                 d(PRES, 24 * 7) + 
-                 d(PRES, 24 * 30) + 
-                 d(PRES, 24 * 365) + 
-                 L(d(PRES), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(TEMP) + 
-                 d(TEMP, 24) + 
-                 d(TEMP, 24 * 7) + 
-                 d(TEMP, 24 * 30) + 
-                 d(TEMP, 24 * 365) + 
-                 L(d(TEMP), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(Iws) + 
-                 d(Iws, 24) + 
-                 d(Iws, 24 * 7) + 
-                 d(Iws, 24 * 30) + 
-                 d(Iws, 24 * 365) + 
-                 L(d(Iws), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(precipitation) + 
-                 d(precipitation, 24) + 
-                 d(precipitation, 24 * 7) + 
-                 d(precipitation, 24 * 30) + 
-                 d(precipitation, 24 * 365) + 
-                 L(d(precipitation), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(Iprec) +
-                 d(Iprec, 24) + 
-                 d(Iprec, 24 * 7) + 
-                 d(Iprec, 24 * 30) + 
-                 d(Iprec, 24 * 365) + 
-                 L(d(Iprec), c(1, 24, 24 * 7, 24 * 30, 24 * 365)), data = data2)
+# Hourly - Differences
+dynlm(d(PM_US.Post) ~
+        L(d(PM_US.Post), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(DEWP) + 
+        d(DEWP, 24) + 
+        d(DEWP, 24 * 7) + 
+        d(DEWP, 24 * 30) + 
+        d(DEWP, 24 * 365) + 
+        L(d(DEWP), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(HUMI) + 
+        d(HUMI, 24) + 
+        d(HUMI, 24 * 7) + 
+        d(HUMI, 24 * 30) + 
+        d(HUMI, 24 * 365) + 
+        L(d(HUMI), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(PRES) + 
+        d(PRES, 24) + 
+        d(PRES, 24 * 7) + 
+        d(PRES, 24 * 30) + 
+        d(PRES, 24 * 365) + 
+        L(d(PRES), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(TEMP) + 
+        d(TEMP, 24) + 
+        d(TEMP, 24 * 7) + 
+        d(TEMP, 24 * 30) + 
+        d(TEMP, 24 * 365) + 
+        L(d(TEMP), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(Iws) + 
+        d(Iws, 24) + 
+        d(Iws, 24 * 7) + 
+        d(Iws, 24 * 30) + 
+        d(Iws, 24 * 365) + 
+        L(d(Iws), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(precipitation) + 
+        d(precipitation, 24) + 
+        d(precipitation, 24 * 7) + 
+        d(precipitation, 24 * 30) + 
+        d(precipitation, 24 * 365) + 
+        L(d(precipitation), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(Iprec) +
+        d(Iprec, 24) + 
+        d(Iprec, 24 * 7) + 
+        d(Iprec, 24 * 30) + 
+        d(Iprec, 24 * 365) + 
+        L(d(Iprec), c(1, 24 * 7, 24 * 30, 24 * 365)), data = data2) %>% summary() # 0.02
+
+# Hourly - Values
+dynlm( PM_US.Post ~ 
+          L(PM_US.Post, c(1, 24 * 7, 24 * 30, 24 * 365)) +
+          L(DEWP, c(0, 1, 24 * 7, 24 * 30, 24 * 365)) +
+          L(HUMI, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(PRES, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(TEMP, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(Iws, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(precipitation, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(Iprec, c(0, 1, 24 * 7, 24 * 30, 24 * 365)), data = data2) %>% summary() # 0.88
+
+# Daily - Differences
+dynlm( d(PM_US.Post) ~ 
+         d(PM_US.Post, 2) +
+         L(d(PM_US.Post), c(1, 7, 30, 365)) +
+         d(DEWP) + 
+         d(DEWP, 7) + 
+         d(DEWP, 30) + 
+         d(DEWP, 365) + 
+         L(d(DEWP), c(1, 7, 30, 365)) +
+         d(HUMI) + 
+         d(HUMI, 7) + 
+         d(HUMI, 30) + 
+         d(HUMI, 365) + 
+         L(d(HUMI), c(1, 7, 30, 365)) +
+         d(PRES) + 
+         d(PRES, 7) + 
+         d(PRES, 30) + 
+         d(PRES, 365) + 
+         L(d(PRES), c(1, 7, 30, 365)) +
+         d(TEMP) + 
+         d(TEMP, 7) + 
+         d(TEMP, 30) + 
+         d(TEMP, 365) + 
+         L(d(TEMP), c(1, 7, 30, 365)) +
+         d(Iws) + 
+         d(Iws, 7) + 
+         d(Iws, 30) + 
+         d(Iws, 365) + 
+         L(d(Iws), c(1, 7, 30, 365)) +
+         d(precipitation) +  
+         d(precipitation, 7) + 
+         d(precipitation, 30) + 
+         d(precipitation, 365) + 
+         L(d(precipitation), c(1, 7, 30, 365)) +
+         d(Iprec) + 
+         d(Iprec, 7) + 
+         d(Iprec, 30) + 
+         d(Iprec, 365) + 
+         L(d(Iprec), c(1, 7, 30, 365)), data = dailyData) %>% summary() # 0.15
+
+# Daily - Values
+dynlm( PM_US.Post~ 
+          L(PM_US.Post, c(1, 7, 30, 365)) +
+          L(DEWP, c(0, 1, 7, 30, 365)) +
+          L(HUMI, c(0, 1, 7, 30, 365))+
+          L(PRES, c(0, 1, 7, 30, 365))+
+          L(TEMP, c(0, 1, 7, 30, 365))+
+          L(Iws, c(0, 1, 7, 30, 365))+
+          L(precipitation, c(0, 1, 7, 30, 365))+
+          L(Iprec, c(0, 1, 7, 30, 365)), data = dailyData) %>% summary() # 0.45
+
+# Daily - Values (Optimized)
+dynlm( PM_US.Post ~ 
+          L(PM_US.Post, c(1,10)) +
+          L(HUMI, c(1, 365))+
+          L(TEMP)+
+          Iws+ 
+          L(Iws)+
+          precipitation + 
+          L(Iprec, 365), data = dailyData) %>% summary() # 0.45
+
+# Daily - Values only from lag(1)
+dynlm( PM_US.Post ~ L(PM_US.Post), data = dailyData) %>% summary() # 0.35
+
+# Weekly - Differences
+dynlm(d(PM_US.Post) ~
+        d(PM_US.Post, 2) +
+        L(d(PM_US.Post), c(1, 4, 4 * 12)) +
+        d(DEWP, 4) + 
+        d(DEWP, 4 * 12) + 
+        L(d(DEWP), c(0, 1, 4, 4 * 12)) +
+        d(HUMI, 4) + 
+        d(HUMI, 4 * 12) + 
+        L(d(HUMI), c(0, 1, 4, 4 * 12)) +
+        d(PRES, 4) + 
+        d(PRES, 4 * 12) +  
+        L(d(PRES), c(0, 1, 4, 4 * 12)) +
+        d(TEMP, 4) + 
+        d(TEMP, 4 * 12) +  
+        L(d(TEMP), c(0, 1, 4, 4 * 12)) +
+        d(Iws, 4) + 
+        d(Iws, 4 * 12) +  
+        L(d(Iws), c(0, 1, 4, 4 * 12)) +
+        d(precipitation, 4) + 
+        d(precipitation, 4 * 12) +  
+        L(d(precipitation), c(0, 1, 4, 4 * 12)) +
+        d(Iprec, 4) + 
+        d(Iprec, 4 * 12) + 
+        L(d(Iprec), c(0, 1, 4, 4 * 12)), data = weeklyData) %>% summary() # 0.5219
+
+# Weekly - Values
+dynlm( PM_US.Post~ 
+         L(PM_US.Post, c(1, 4, 4 * 12)) +
+         L(DEWP, c(0, 1, 4, 4 * 12)) +
+         L(HUMI, c(0, 1, 4, 4 * 12))+
+         L(PRES, c(0, 1, 4, 4 * 12))+
+         L(TEMP, c(0, 1, 4, 4 * 12))+
+         L(Iws, c(0, 1, 4, 4 * 12))+
+         L(precipitation, c(0, 1, 4, 4 * 12))+
+         L(Iprec, c(0, 1, 4, 4 * 12)), data = weeklyData) %>% summary() # 0.5228
 
 
-summary(ARDL)
-AIC(ARDL)
-BIC(ARDL)
-
-# Na wartościach
-ARDL2 <- dynlm( PM_US.Post~ 
-                  L(PM_US.Post, c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                  DEWP+ 
-                  L(DEWP, c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                  HUMI+ 
-                  L(HUMI, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  PRES+ 
-                  L(PRES, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  TEMP+ 
-                  L(TEMP, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  Iws+ 
-                  L(Iws, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  precipitation+ 
-                  L(precipitation, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  Iprec +
-                  L(Iprec, c(1, 24, 24 * 7, 24 * 30, 24 * 365)), data = data2)
-
-
-summary(ARDL2)
-AIC(ARDL2)
-BIC(ARDL2)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#########################DO NOT INCLUDE - nie wiem do czego to?? ###################################################
+#########################DO NOT INCLUDE - nie wiem do czego to? ###################################################
 
 #Creating Time Series
 data3 <- ts(dane$PM_US.Post, frequency=365, start = c(2016,1,1,1), end = c(2018,1,1,1))
