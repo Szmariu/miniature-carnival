@@ -867,6 +867,32 @@ plot(weeklyARDL)
 # Normal Q-Q - very nice distribution, except for some outliers
 # Scale-Location - no patterns observed
 # Residuals vs Leverage - One significant outlier
+par(mfrow=c(1,1))
+
+
+
+    ## Predictions 
+# Hourly
+hourlyARDL$fitted.values %>%  autoplot(color = "blue", alpha=0.5) + geom_line(data = data2, aes(y = PM_US.Post), color = "blue", alpha=0.3) # połączyć z realnymi danymi
+ggplot() +
+  geom_line(data = as.data.frame(hourlyARDL$fitted.values), aes(x = c(1:length(hourlyARDL$fitted.values)), y = hourlyARDL$fitted.values), color = "red", alpha=0.8) +
+  geom_line(data = data2[1:length(hourlyARDL$fitted.values),], aes(x = c(1:length(hourlyARDL$fitted.values)), y = PM_US.Post), color = "green", alpha=0.5)
+
+# Daily
+dailyARDL$fitted.values %>%  autoplot(color = 'green') + geom_line(data = dailyData, aes(y = PM_US.Post), color = "blue", alpha=0.3) # połączyć z realnymi danymi
+ggplot() +
+  geom_line(data = as.data.frame(dailyARDL$fitted.values), aes(x = c(1:length(dailyARDL$fitted.values)), y = dailyARDL$fitted.values), color = "blue", alpha=0.8) +
+  geom_line(data = dailyData[1:length(dailyARDL$fitted.values),], aes(x = c(1:length(dailyARDL$fitted.values)), y = PM_US.Post), color = "green", alpha=0.5)
+
+# Weekly
+weeklyARDL$fitted.values %>%  autoplot(color = "blue", alpha=0.5) + geom_line(data = weeklyData, aes(y = PM_US.Post), color = "blue", alpha=0.3) # połączyć z realnymi danymi
+ggplot() +
+  geom_line(data = as.data.frame(weeklyARDL$fitted.values), aes(x = c(1:length(weeklyARDL$fitted.values)), y = weeklyARDL$fitted.values), color = "red", alpha=0.8) +
+  geom_line(data = weeklyData[1:length(weeklyARDL$fitted.values),], aes(x = c(1:length(weeklyARDL$fitted.values)), y = PM_US.Post), color = "green", alpha=0.5)
+
+###Opisać wykresy 
+
+
 
     ## Residuals
 hourlyARDL %>% residuals() %>% autoplot() # Some serious outliers, otherwise the residuals seem to form a stationary process
@@ -905,13 +931,6 @@ weeklyARDL %>% residuals() %>% as.matrix() %>% jbTest()
 bptest(hourlyARDL,data=data2) # heteroscedasticity
 bptest(dailyARDL,data=dailyData) # heteroscedasticity
 bptest(weeklyARDL,data=weeklyData) # near the deciosion boundary, may be homoskedastic
-
-
-
-
-
-
-
 
 
 
