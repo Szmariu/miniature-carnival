@@ -16,6 +16,11 @@ library(rlist)
 library(dynlm)
 library(akima)
 library(ardl)
+library(ggfortify)
+library(magrittr)
+library(multipanelfigure)
+library(formattable)
+
 
 
 ################## DATA CLEANING and Manipulation ######################
@@ -36,25 +41,31 @@ write.csv(as.data.frame(data2),"data/data2.csv")
 data3 <- ts(data2[,c('PM_US.Post', "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec' )], frequency = 24)
 
 ##PLOTTING to glimpse the data
-dane.zoo <- as.zoo(data2)
-plot(dane.zoo)
 
-plot(data2$PM_US.Post, type='l', main= "PM2.5")
-plot(data2$DEW, type = 'l', main = "DEW")
-plot(data2$HUMI, type = 'l', main = "Humidity")
-plot(data2$PRES, type = 'l', main = "Pressure")
-plot(data2$TEMP, type = 'l', main = "Temperature")
-plot(data2$Iws, type = 'l', main = "Iws")
-plot(data2$precipitation, type = 'l', main = "precipitation")
-plot(data2$Iprec, type = 'l', main = "Iprec")
-plot(data2$season, type = 'l', main = "season")
+autoplot(data2$PM_US.Post, ts.colour = 'coral4', xlab = 'Year', ylab = 'Values')
+x <- autoplot(data2$DEWP, main = "DEW point (C)", ts.colour = 'darkolivegreen3', xlab = 'Year', ylab = 'Values')
+y <- autoplot(data2$TEMP, main = "Temperature (C)", ts.colour = 'indianred4', xlab = 'Year', ylab = 'Values')
+z <- autoplot(data2$HUMI, main = "Humidity (%)", ts.colour = 'grey34', xlab = 'Year', ylab = 'Values')
+t <- autoplot(data2$PRES, main = "Pressure (hPa)", ts.colour = 'goldenrod3', xlab = 'Year', ylab = 'Values')
 
+figure <- multi_panel_figure(columns = 2, rows = 2, panel_label_type = "none")
 
+periodicity(dailyData)
+
+figure %<>%
+  fill_panel(x, column = 1, row = 1) %>%
+  fill_panel(y, column = 2, row = 1) %>%
+  fill_panel(z, column = 1, row = 2) %>%
+  fill_panel(t, column = 2, row = 2)
+print(figure)
 #### Convert to daily
 periodicity(data2)
 dailyData <- apply.daily(data2, mean) # Możemy tego używać w miejsce data2
 plot(as.zoo(dailyData))
 periodicity(dailyData)
+
+autoplot(data2[,c('Iws', 'Iprec', 'precipitation')], xlab = 'Year', ylab = 'Values', ts.colour = 'black')
+
 
 #################### SARIMA - KORNEL ######################
 #Correlations
@@ -198,58 +209,36 @@ print(ARIMA.predictions.model.stats)
 
 ######### ARDL - sesonally adjusted monthly data from jDemetra (MICHALINA)
 
-PM <- read.csv('data/adjusted/pm.txt', sep = "\t", dec = ',')
+PM <- read.csv('pm.txt', sep = "\t", dec = ',')
 tsPM <- ts(PM[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-DEWP <- read.csv('data/adjusted/DEWP.txt', sep = "\t", dec = ',')
+DEWP <- read.csv('DEWP.txt', sep = "\t", dec = ',')
 tsDEWP <- ts(DEWP[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-HUMI <- read.csv('data/adjusted/HUMI.txt', sep = "\t", dec = ',')
+HUMI <- read.csv('HUMI.txt', sep = "\t", dec = ',')
 tsHUMI <- ts(HUMI[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-lprec <- read.csv('data/adjusted/lprec.txt', sep = "\t", dec = ',')
+lprec <- read.csv('lprec.txt', sep = "\t", dec = ',')
 tslprec <- ts(lprec[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-lws <- read.csv('data/adjusted/lws.txt', sep = "\t", dec = ',')
+lws <- read.csv('lws.txt', sep = "\t", dec = ',')
 tslws <- ts(lws[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-precipitation <- read.csv('data/adjusted/precipitation.txt', sep = "\t", dec = ',')
-tsprecipitation <- ts(precipitation[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+PRES <- read.csv('PRES.txt', sep = "\t", dec = ',')
+tsPRES <- ts(PRES[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-#PRES <- read.csv('PRES.txt', sep = "\t", dec = ',')
-#tsPRES <- ts(PRES[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
-
-#season <- read.csv('PRES.txt', sep = "\t", dec = ',')
-#daneseason <- xts(season[,c('Seasonally.adjusted')], order.by = as.Date(season[,'X']), frequency = 12)
-
-TEMP <- read.csv('data/adjusted/TEMP.txt', sep = "\t", dec = ',')
+TEMP <- read.csv('TEMP.txt', sep = "\t", dec = ',')
 tsTEMP <- ts(TEMP[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
+precipitation <- read.csv('precipitation.txt', sep = "\t", dec = ',')
+tsprecipitation <- ts(precipitation[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
-timeseries <- ts.union(tsPM, tsDEWP, tsHUMI, tslprec, tslws, tsprecipitation, tsTEMP)
-
-
-
-##plots
-plot(timeseries)
-dane.zoo <- as.zoo(timeseries)
-
+timeseries <- ts.union(tsPM, tsDEWP, tsHUMI, tslprec, tslws, tsPRES, tsTEMP, tsprecipitation)
 
 ##correlation
 round(cor(timeseries, method = 'pearson'),2)
 round(cor(timeseries, method = 'spearman'),2)
 
-##white noise, h0 - values are independent
-Box.test(timeseries[,'tsPM'])
-Box.test(timeseries[,'tsDEWP'])
-Box.test(timeseries[,'tsHUMI'])
-Box.test(timeseries[,'tsTEMP'])
-Box.test(timeseries[,'tslws'])
-Box.test(timeseries[,'tsprecipitation'])
-Box.test(timeseries[,'tslprec'])
-
-
-#############################
 ###stationarity
 #without differences
 adfs1 <- ur.df(timeseries[,c("tsPM")], type = "none", lags = 3)
@@ -261,14 +250,14 @@ bgtest(resids_~1, order = 4)
 bgtest(resids_~1, order = 5)
 summary(adfs1) #non-stationary
 
-adfs11 <- ur.df(timeseries[,c("tsPM")], type = "drift", lags = 0)
-resids_ <- adfs11@testreg$residuals
+adfs1 <- ur.df(timeseries[,c("tsPM")], type = "drift", lags = 0)
+resids_ <- adfs1@testreg$residuals
 bgtest(resids_~1, order = 1)
 bgtest(resids_~1, order = 2)
 bgtest(resids_~1, order = 3)
 bgtest(resids_~1, order = 4)
 bgtest(resids_~1, order = 5)
-summary(adfs11) #stationary
+summary(adfs1) #stationary
 ################################
 
 ## stationarity on differences
@@ -326,7 +315,7 @@ bgtest(resids_~1, order = 4)
 bgtest(resids_~1, order = 5)
 summary(adfs6) #stationary
 
-adfs7 <- ur.df(diff(timeseries[,c("tsprecipitation")]), type = "none", lags = 2)
+adfs7 <- ur.df(diff(timeseries[,c("tsPRES")]), type = "none", lags = 1)
 resids_ <- adfs7@testreg$residuals
 bgtest(resids_~1, order = 1)
 bgtest(resids_~1, order = 2)
@@ -335,135 +324,303 @@ bgtest(resids_~1, order = 4)
 bgtest(resids_~1, order = 5)
 summary(adfs7) #stationary
 
-###lags
+adfs8 <- ur.df(diff(timeseries[,c("tsprecipitation")]), type = "none", lags = 2)
+resids_ <- adfs8@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs8) #stationary
+
 timeseries <- as.zoo(timeseries)
-timeseries$diff_PM<-diff(timeseries[,c("tsPM")])
-timeseries$diff_HUMI<-diff(timeseries[,c("tsHUMI")])
-timeseries$diff_TEMP<-diff(timeseries[,c("tsTEMP")])
-timeseries$diff_lprec<-diff(timeseries[,c("tslprec")])
-timeseries$diff_lws<-diff(timeseries[,c("tslws")])
-timeseries$diff_DEWP<-diff(timeseries[,c("tsDEWP")])
-timeseries$diff_precipitation<-diff(timeseries[,c("tsprecipitation")])
-#ardl_auto <- auto.ardl(diff_PM ~ diff_HUMI  + diff_TEMP + diff_lprec + diff_lws + diff_DEWP + diff_precipitation, 
-#                      data=timeseries[-1,], xmax = c(10,10,10,10,10,10))
-#summary(ardl_auto)
 
-ardl_auto2 <- auto.ardl(diff_PM ~ diff_HUMI, 
-                        data=timeseries[-1,], xmax = 10, ymax = 10)
-
-summary(ardl_auto2) ##diff_HUMI too many lags, diff_PM 1,2,3 (0.01) & 4,5 (0.1)
-
-
-ardl_auto3 <- auto.ardl(diff_PM ~ diff_TEMP, 
-                        data=timeseries[-1,], xmax = 10, ymax = 10)
-
-summary(ardl_auto3) ##diff_TEMP 4 (0.1), diff_PM 1,2,3 (0.01) 
-
-
-ardl_auto4 <- auto.ardl(diff_PM ~ diff_DEWP, 
-                        data=timeseries[-1,], xmax = 10, ymax = 10)
-
-summary(ardl_auto4) ##diff_DEWP 8 (0.1), diff_PM 2,3 (0.05) & 1 (0.1) 
-
-
-ardl_auto5 <- auto.ardl(diff_PM ~ diff_lprec, 
-                        data=timeseries[-1,], xmax = 10, ymax = 10)
-
-summary(ardl_auto5) ##diff_lprec 2 (0.05), diff_PM 1 (0.01) & 2,3 (0.05)
-
-ardl_auto6 <- auto.ardl(diff_PM ~ diff_lws, 
-                        data=timeseries[-1,], xmax = 10, ymax = 10)
-
-summary(ardl_auto6) ##diff_lws 10 (0.1), diff_PM 2,3 (0.01) & 1,4 (0.05) & 10 (0.1)
-
-ardl_auto7 <- auto.ardl(diff_PM ~ diff_precipitation, 
-                        data=timeseries[-1,], xmax = 10, ymax = 10)
-
-summary(ardl_auto7) ##diff_precipitation 2 (0.05) & 3 (0.1), diff_PM 1 (0.001) & 2,3 (0.01) & 4 (0.05) & 5 (0.1)
-
-#without lags
+#1 lag
 ARDL <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
-                L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) , data = timeseries,start = c(2011, 12))
+                L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
 summary(ARDL)
 AIC(ARDL)
 BIC(ARDL)
 
-#without tsHUMI
-ARDL2 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
-                 L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) , data = timeseries,start = c(2011, 12))
+#1:3 lags
+ARDL2 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP), c(1:3)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
 summary(ARDL2)
 AIC(ARDL2)
 BIC(ARDL2)
 
-anova(ARDL, ARDL2)
-
-ARDL3 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:5)) + d(tsDEWP) + L(d(tsDEWP), 8) + d(tslws) + L(d(tslws),10) + d(tsprecipitation) + 
-                 L(d(tsprecipitation),c(2,3)) + d(tslprec) + L(d(tslprec), 2) + d(tsTEMP) + L(d(tsTEMP), 4) , data = timeseries,start = c(2011, 12))
+#1:2 lags
+ARDL3 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:2)) + d(tsDEWP) + L(d(tsDEWP), c(1:2)) + d(tsHUMI) + L(d(tsHUMI), c(1:2)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:2)) + d(tslprec) + L(d(tslprec), c(1:2)) + d(tsTEMP) + L(d(tsTEMP), c(1:2)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
 summary(ARDL3)
 AIC(ARDL3)
 BIC(ARDL3)
 
-anova(ARDL2, ARDL3)
+##lowest AIC & BIC in model with 1:3 lags ARDL2 (AIC = 317.07, BIC = 376.69)
 
-ARDL4 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:5)) + d(tsDEWP) + L(d(tsDEWP), 8) + d(tslws) + L(d(tslws),10) + d(tsprecipitation) + 
-                 L(d(tsprecipitation),2) + d(tslprec) + L(d(tslprec), 2) + d(tsTEMP) + L(d(tsTEMP), 4) , data = timeseries,start = c(2011, 12))
+#1:3 lags in PM & 1:2 lags in DEWP
+ARDL4 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1,3)) + d(tsDEWP) + L(d(tsDEWP), c(1:2)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
 summary(ARDL4)
 AIC(ARDL4)
 BIC(ARDL4)
 
-anova(ARDL3, ARDL4)
-
-ARDL5 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP), 8) + d(tslws) + L(d(tslws),10) + d(tsprecipitation) + 
-                 L(d(tsprecipitation),2) + d(tslprec) + L(d(tslprec), 2) + d(tsTEMP) + L(d(tsTEMP), 4) , data = timeseries,start = c(2011, 12))
+#1:3 lags in PM & 1 lags in DEWP
+ARDL5 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
 summary(ARDL5)
 AIC(ARDL5)
 BIC(ARDL5)
 
-anova(ARDL4, ARDL5)
+## better ARDL 5 (AIC = 313.8541 & BIC = 369.8607)
 
-acf(ARDL4$residuals, type='correlation')
-#has this model sorted out autocorrelation issue? - Yes!!
-bgtest(residuals(ARDL4)~1, order = 1)
-bgtest(residuals(ARDL4)~1, order = 2)
-bgtest(residuals(ARDL4)~1, order = 3)
-bgtest(residuals(ARDL4)~1, order = 4)
-bgtest(residuals(ARDL4)~1, order = 5)
-
-acf(ARDL5$residuals, type='correlation')
-#has this model sorted out autocorrelation issue? - Yes!!
-bgtest(residuals(ARDL5)~1, order = 1)
-bgtest(residuals(ARDL5)~1, order = 2)
-bgtest(residuals(ARDL5)~1, order = 3)
-bgtest(residuals(ARDL5)~1, order = 4)
-bgtest(residuals(ARDL5)~1, order = 5)
-
-
-ARDL6 <- dynlm(d(tsPM)~L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP), 8) + L(d(tslws), 10)
-               + L(d(tsTEMP), 4), data = timeseries, start = c(2011,12))
+#1:2 lags in PM & 1 lag in DEWP
+ARDL6 <- dynlm(d(tsPM) ~ L(d(tsPM), c(1:2)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
 summary(ARDL6)
 AIC(ARDL6)
 BIC(ARDL6)
-acf(ARDL6$residuals, type='correlation')
-bgtest(residuals(ARDL6)~1, order = 1)
-bgtest(residuals(ARDL6)~1, order = 2)
-bgtest(residuals(ARDL6)~1, order = 3)
-bgtest(residuals(ARDL6)~1, order = 4)
-bgtest(residuals(ARDL6)~1, order = 5)
-##no autocorrelation 
 
-jbTest(as.matrix(residuals(ARDL6))) # residuals normally distributed 
+#1 lags in PM & 1 lag in DEWP
+ARDL7 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL7)
+AIC(ARDL7)
+BIC(ARDL7)
+
+###best ARDL7 (AIC = 312.6063, BIC = 364.9995)
+
+#1 lags in PM & 1 lag in DEWP & 1:2 lags in HUMI
+ARDL8 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:2)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL8)
+AIC(ARDL8)
+BIC(ARDL8)
+
+#1 lags in PM & 1 lag in DEWP & 1 lag in HUMI
+ARDL9 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI)) + d(tslws) + L(d(tslws), c(1:3)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL9)
+AIC(ARDL9)
+BIC(ARDL9)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws 
+ARDL10 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                 L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL10)
+AIC(ARDL10)
+BIC(ARDL10)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1 lag in lws 
+ARDL11 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL11)
+AIC(ARDL11)
+BIC(ARDL11)
+
+###best ARDL10 (AIC = 311.0076, BIC = 361.5941)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1 lag in lws & 1:2 lags in precipitation 
+ARDL12 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:2)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL12)
+AIC(ARDL12)
+BIC(ARDL12)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1 lag in lws & 1 lags in precipitation 
+ARDL13 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec), c(1:3)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL13)
+AIC(ARDL13)
+BIC(ARDL13)
+
+###best ARDL10 (AIC = 311.0076, BIC = 361.5941)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1:2 lags in lprec
+ARDL14 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec), c(1:2)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL14)
+AIC(ARDL14)
+BIC(ARDL14)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec
+ARDL15 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP), c(1:3)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL15)
+AIC(ARDL15)
+BIC(ARDL15)
+
+###best ARDL15 (AIC = 308.5407, BIC = 355.5139)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1:2 lags in TEMP
+ARDL16 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP), c(1:2)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL16)
+AIC(ARDL16)
+BIC(ARDL16)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP
+ARDL17 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:3)), data = timeseries,start = c(2011, 12))
+summary(ARDL17)
+AIC(ARDL17)
+BIC(ARDL17)
+
+## best ARDL17 (AIC = 307.2816 & BIC = 350.6415)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL18 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL18)
+AIC(ARDL18)
+BIC(ARDL18)
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1 lag in PRES
+ARDL19 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL19)
+AIC(ARDL19)
+BIC(ARDL19)
+
+##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
+
+##ARDL with no lags
+ARDL20 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) +d(tsprecipitation) + 
+                  d(tslprec) + d(tsTEMP) + d(tsPRES), data = timeseries,start = c(2011, 12))
+summary(ARDL20)
+AIC(ARDL20)
+BIC(ARDL20)
+
+##ARDL with no lags in PM  & 1 lag for the rest
+ARDL21 <- dynlm(d(tsPM) ~ d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
+                L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL21)
+AIC(ARDL21)
+BIC(ARDL21)
+
+##ARDL with no lags in PM & DEWP & 1 lag for the rest
+ARDL22 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + L(d(tsHUMI)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL22)
+AIC(ARDL22)
+BIC(ARDL22)
+
+##ARDL with no lags in PM & DEWP & HUMI & 1 lag for the rest
+ARDL23 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL23)
+AIC(ARDL23)
+BIC(ARDL23)
+
+##ARDL with no lags in PM & DEWP & HUMI & lws & 1 lag for the rest
+ARDL24 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL24)
+AIC(ARDL24)
+BIC(ARDL24)
+
+##ARDL with no lags in PM & DEWP & HUMI & lws & pecipitation & 1 lag for the rest
+ARDL25 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL25)
+AIC(ARDL25)
+BIC(ARDL25)
+
+##ARDL with no lags in PM & DEWP & HUMI & lws & pecipitation & lprec & 1 lag for the rest
+ARDL26 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  d(tslprec) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL26)
+AIC(ARDL26)
+BIC(ARDL26)
+
+##ARDL with no lags in PM & DEWP & HUMI & lws & pecipitation & lprec & TEMP & 1 lag for the rest
+ARDL27 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  d(tslprec) + d(tsTEMP) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
+summary(ARDL27)
+AIC(ARDL27)
+BIC(ARDL27)
+
+##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
+##model statystyczny istotny p-Value < 0.05
+
+#1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL18 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL18)
+AIC(ARDL18)
+BIC(ARDL18)
+
+#no lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL28 <- dynlm(d(tsPM) ~ d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL28)
+AIC(ARDL28)
+BIC(ARDL28)
 
 
-bptest(ARDL6,data=timeseries, studentize=FALSE)
-bptest(ARDL6,data=timeseries)  ##homoscedasticity 
+#no lags in PM & DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL29 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL29)
+AIC(ARDL29)
+BIC(ARDL29)
 
-resettest(ARDL6)  ##model well fitted/ correctly specified
+#no lags in PM & DEWP & HUMI & lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL30 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  L(d(tsprecipitation), c(1:3)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL30)
+AIC(ARDL30)
+BIC(ARDL30)
 
-vif(ARDL6, data = timeseries)
+#no lags in PM & DEWP & HUMI & lws & precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL31 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL31)
+AIC(ARDL31)
+BIC(ARDL31)
 
-#forecast(ARDL , x , h = 1 , interval = FALSE, level = 0.95 , nSim = 500)
-#predict
+#no lags in PM & DEWP & HUMI & lws & precipitation & lprec & 1 lag in TEMP & 1:2 lags in PRES
+ARDL32 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  d(tslprec) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL32)
+AIC(ARDL32)
+BIC(ARDL32)
 
+#no lags in PM & DEWP & HUMI & lws & precipitation & lprec & TEMP & 1:2 lags in PRES
+ARDL33 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + d(tslws) + d(tsprecipitation) + 
+                  d(tslprec) + d(tsTEMP) +d(tsPRES) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+summary(ARDL33)
+AIC(ARDL33)
+BIC(ARDL33)
+
+##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
+##model statystyczny istotny p-Value < 0.05
+###AIC i BIC im mniejszy tym lepszy
+
+autoplot(acf(ARDL18$residuals, type='correlation', plot = FALSE))
+autoplot(ARDL18)
+
+jbTest(as.matrix(residuals(ARDL18))) # residuals normally distributed 
+
+
+bptest(ARDL18,data=timeseries, studentize=FALSE)
+bptest(ARDL18,data=timeseries)  ##homoscedasticity 
+
+resids_ <- ARDL18$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+
+
+#resettest(fitted(ARDL18), data = timeseries)  ##model well fitted/ correctly specified
+#resettest(dynlm(d(tsPM)~L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP), 8) + L(d(tslws), 10)
+    #            + L(d(tsTEMP), 4), data = timeseries, start = c(2011,12)))
+
+#vif(ARDL18, data = timeseries)
+
+autoplot(ARDL18)
 
 
 ############## ARDL - MICHAŁ ##############
