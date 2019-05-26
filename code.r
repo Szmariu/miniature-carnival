@@ -82,6 +82,15 @@ tbats %>%
 
 
 
+
+# unit root test
+pp.test <- ur.pp(data2$PM_US.Post,           # tested series
+                 type = c("Z-tau"),     # standardization of the test statistic
+                 model = c("trend")) # constant deterministic component
+# which means we assume that any trends in the data are stochastic
+
+summary(pp.test) # The first differences are stationary
+
 #################### SARIMA - KORNEL ######################
 #Correlations
 round(cor(data2, method = 'pearson'),2)
@@ -859,7 +868,10 @@ plot(weeklyARDL)
 # Scale-Location - no patterns observed
 # Residuals vs Leverage - One significant outlier
 
-
+    ## Residuals
+hourlyARDL %>% residuals() %>% autoplot() # Some serious outliers, otherwise the residuals seem to form a stationary process
+dailyARDL %>% residuals() %>% autoplot() # Around 0, bo some sesonality (!) can be observed
+weeklyARDL %>% residuals() %>% autoplot() # Some mild outliers, otherwise stationary
 
     ## Breusch-Godfrey test for serial correlation
 # Hourly - Correlation
@@ -883,13 +895,28 @@ bgtest(residuals(weeklyARDL)~1, order = 3)
 bgtest(residuals(weeklyARDL)~1, order = 4)
 bgtest(residuals(weeklyARDL)~1, order = 5)
 
-
-
     ## Jarque - Bera Normality Test of the residuals
 hourlyARDL %>% residuals() %>% as.matrix() %>% jbTest()
 dailyARDL %>% residuals() %>% as.matrix() %>% jbTest()
 weeklyARDL %>% residuals() %>% as.matrix() %>% jbTest()
 # Residuals are not normally distributed for all models
+
+    ## Breusch-Pagan test for homoskedacity
+bptest(hourlyARDL,data=data2) # heteroscedasticity
+bptest(dailyARDL,data=dailyData) # heteroscedasticity
+bptest(weeklyARDL,data=weeklyData) # near the deciosion boundary, may be homoskedastic
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
