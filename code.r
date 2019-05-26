@@ -804,28 +804,28 @@ dynlm( PM_US.Post~
 
 ############ ARDL v2 - Final models ##############
 
-# Hourly - Values (Optimized)
-dynlm( PM_US.Post ~ 
+## Hourly - Values (Optimized)
+hourlyARDL <- dynlm( PM_US.Post ~ 
          L(PM_US.Post) +
          L(DEWP, c(0, 1, 24 * 365)) +
          L(HUMI, c(0, 1))+
          L(PRES, c(24 * 30))+
          L(TEMP, c(0, 1, 24 * 7))+
-         Iws, data = data2) %>% summary() # 0.89
+         Iws, data = data2) 
+hourlyARDL %>% summary() # 0.89
 
-
-# Daily - Values (Optimized)
-dynlm( PM_US.Post ~ 
+## Daily - Values (Optimized)
+dailyARDL <- dynlm( PM_US.Post ~ 
          L(PM_US.Post, c(1, 10)) +
          L(HUMI) +
          L(TEMP) +
          Iws+ 
          L(Iws)+
-         precipitation, data = dailyData) %>% summary() # 0.44
+         precipitation, data = dailyData) 
+dailyARDL %>% summary() # 0.44
 
-
-# Weekly - Values (Optimized)
-dynlm( PM_US.Post~ 
+## Weekly - Values (Optimized)
+weeklyARDL <- dynlm( PM_US.Post~ 
          L(PM_US.Post) +
          DEWP +
          L(DEWP, 4) +
@@ -833,22 +833,63 @@ dynlm( PM_US.Post~
          L(TEMP)+
          Iws +
          precipitation + 
-         L(precipitation, 4), data = weeklyData) %>% summary() # 0.54
+         L(precipitation, 4), data = weeklyData) 
+weeklyARDL %>% summary() # 0.54
 
 
 
 
+    ## Plots of the models
+par(mfrow=c(2,2))
+plot(hourlyARDL)
+# Residuals vs Fitted - mostly linear, some outliers
+# Normal Q-Q - follows strictly the normal dist, exept for the most extreme values that are way off
+# Scale-Location - values lie mostly in the left-hand side corner
+# Residuals vs Leverage - there is one observation outside the Cook's distance
+
+plot(dailyARDL)
+# Residuals vs Fitted - no extra patterns, the residuals form a pack in the middle
+# Normal Q-Q - some deviation from the dist in the extreme positive side
+# Scale-Location - The points are not spread out evenly, but sid mostly in the middle
+# Residuals vs Leverage - there is one observation outside the Cook's distance (different than the one in hourly)
+
+plot(weeklyARDL)
+# Residuals vs Fitted - mostly linear
+# Normal Q-Q - very nice distribution, except for some outliers
+# Scale-Location - no patterns observed
+# Residuals vs Leverage - One significant outlier
 
 
 
+    ## Breusch-Godfrey test for serial correlation
+# Hourly - Correlation
+bgtest(residuals(hourlyARDL)~1, order = 1)
+bgtest(residuals(hourlyARDL)~1, order = 2)
+bgtest(residuals(hourlyARDL)~1, order = 3)
+bgtest(residuals(hourlyARDL)~1, order = 4)
+bgtest(residuals(hourlyARDL)~1, order = 5)
+
+# Daily - NO Correlation
+bgtest(residuals(dailyARDL)~1, order = 1)
+bgtest(residuals(dailyARDL)~1, order = 2)
+bgtest(residuals(dailyARDL)~1, order = 3)
+bgtest(residuals(dailyARDL)~1, order = 4)
+bgtest(residuals(dailyARDL)~1, order = 5)
+
+# Weekly - NO Correlation
+bgtest(residuals(weeklyARDL)~1, order = 1)
+bgtest(residuals(weeklyARDL)~1, order = 2)
+bgtest(residuals(weeklyARDL)~1, order = 3)
+bgtest(residuals(weeklyARDL)~1, order = 4)
+bgtest(residuals(weeklyARDL)~1, order = 5)
 
 
 
-
-
-
-
-
+    ## Jarque - Bera Normality Test of the residuals
+hourlyARDL %>% residuals() %>% as.matrix() %>% jbTest()
+dailyARDL %>% residuals() %>% as.matrix() %>% jbTest()
+weeklyARDL %>% residuals() %>% as.matrix() %>% jbTest()
+# Residuals are not normally distributed for all models
 
 
 
