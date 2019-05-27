@@ -23,32 +23,67 @@ library(formattable)
 
 
 
-################## DATA CLEANING and Manipulation ######################
+################## Data Cleaning ######################
+### Load the data
 dane <- read.csv("data/Shanghai.csv", dec = ".")
+
+# Create the date variable
 dane$date <- NA
 dane$date <- paste(dane$year, dane$month, dane$day, dane$hour, sep =",")
 x <- "%Y, %m, %d, %H"
 dane$date<- as.POSIXct(strptime(dane$date, format = x)) 
+
+# Remove unwanted variables
 dane <-dane %>% select(-c('PM_Jingan', 'PM_Xuhui', 'No', 'cbwd'))
+
+# Remove NAs
 dane <- na.omit(dane)
-write.csv(dane, file = "data/Shanghai2.csv",row.names=FALSE)
 
-data2 <- read.csv('data/Shanghai2.csv')
-data2 <- xts(data2[,c('PM_US.Post',"DEWP", "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec', 
-                      'season')], order.by = as.POSIXct(data2[,"date"]), frequency = 24)
-write.csv(as.data.frame(data2),"data/data2.csv")
+# Convert to XTS 
+data2 <- xts(data[,c('PM_US.Post',"DEWP", "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec', 'season')],
+             order.by = as.POSIXct(data2[,"date"]), 
+             frequency = 24)
 
-data3 <- ts(data2[,c('PM_US.Post', "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec' )], frequency = 24)
+# Write the data to a CSV
+data2 %>% as.data.frame() %>% write.csv("data/data2.csv") 
 
 
-##PLOTTING to glimpse the data
 
+
+
+################## Data Manipulation ######################
+
+#### Generate daily data using mean values from each day. Median was also considered.
+periodicity(data2)
+dailyData <- data2 %>% apply.daily(mean)
+dailyData %>% as.zoo() %>% plot()
+periodicity(dailyData) # Make sure the daya is daily
+
+# Also generate weekly data
+weeklyData <- data2 %>% apply.weekly(mean) 
+weeklyData %>% as.zoo() %>% plot()
+periodicity(weeklyData)
+
+## Creating Time Series for ARIMA
+m.season <- msts(data2$PM_US.Post,seasonal.period=c(7,30,365.25),start = c(2012,1,1,1), end = c(2018,1,1,1))
+
+
+
+
+
+
+################## Basic EDA ######################
+# All variables
+data2 %>% as.zoo() %>% plot()
+
+# Our main variable - PM levels
 autoplot(data2$PM_US.Post, ts.colour = 'coral4', xlab = 'Year', ylab = 'Values')
+
+# Other significant variables
 x <- autoplot(data2$DEWP, main = "DEW point (C)", ts.colour = 'darkolivegreen3', xlab = 'Year', ylab = 'Values')
 y <- autoplot(data2$TEMP, main = "Temperature (C)", ts.colour = 'indianred4', xlab = 'Year', ylab = 'Values')
 z <- autoplot(data2$HUMI, main = "Humidity (%)", ts.colour = 'grey34', xlab = 'Year', ylab = 'Values')
 t <- autoplot(data2$PRES, main = "Pressure (hPa)", ts.colour = 'goldenrod3', xlab = 'Year', ylab = 'Values')
-
 figure <- multi_panel_figure(columns = 2, rows = 2, panel_label_type = "none")
 figure %<>%
   fill_panel(x, column = 1, row = 1) %>%
@@ -56,63 +91,90 @@ figure %<>%
   fill_panel(z, column = 1, row = 2) %>%
   fill_panel(t, column = 2, row = 2)
 print(figure)
+
+# The rest ot the variables
 autoplot(data2[,c('Iws', 'Iprec', 'precipitation')], xlab = 'Year', ylab = 'Values', ts.colour = 'black')
 
 
-#### Convert to daily
-periodicity(data2)
-dailyData <- apply.daily(data2, mean) # Możemy tego używać w miejsce data2
-plot(as.zoo(dailyData))
-periodicity(dailyData)
 
-weeklyData <- apply.weekly(data2, mean) # Możemy tego używać w miejsce data2
-plot(as.zoo(weeklyData))
-periodicity(weeklyData)
 
-# Generate the 
-tbats <-  dailyData$PM_US.Post %>%
-  msts(seasonal.period=c(7,30,365.25)) %>% 
-  tbats() 
 
+
+################## Sesonality removal  ######################
+
+#### Decomposition the hourly PM2.5 Using TBATS
+tbats <- tbats(m.season)
+
+# Plot the results
 plot(tbats)
-
 tbats %>% 
   tbats.components() %>% 
-  autoplot()
+  autoplot() 
+
+
+#### Let's try to decompose the DAILY PM variable to remove the sesonality
+tbatsDaily <-  dailyData$PM_US.Post %>%
+  msts(seasonal.period=c(7,30,365.25)) %>% # Define the sesonal periods 
+  tbats() 
+
+# Results look promising
+plot(tbatsDaily) 
+
+# Hoever, when plotting on the same graph a flaw with the level is visible
+# It's variance when compared to the original vairable is minimal - it might as well be a straing line.
+# This means that there is no point to use this decomposed variable in modeling.
+# It has to be noted, that this may be a result of the implementation of tbats. 
+tbatsDaily %>% 
+  tbats.components() %>% 
+  autoplot() 
 
 
 
 
-# unit root test
-pp.test <- ur.pp(data2$PM_US.Post,           # tested series
-                 type = c("Z-tau"),     # standardization of the test statistic
-                 model = c("trend")) # constant deterministic component
-# which means we assume that any trends in the data are stochastic
 
-summary(pp.test) # The first differences are stationary
+################## First tests ######################
 
-#################### SARIMA - KORNEL ######################
-#Correlations
-round(cor(data2, method = 'pearson'),2)
-rcorr(data2, type = 'pearson')
- 
-#Creating Time Series
-m.season <- msts(data2$PM_US.Post,seasonal.period=c(7,30,365.25),start = c(2012,1,1,1), end = c(2018,1,1,1))
+#### Perform Unit Root Test
+data2$PM_US.Post %>% 
+  ur.pp(type = c("Z-tau"), model = c("trend")) %>%
+  summary()
+# It looks like the first differences are stationary
 
-#Automatic differentiations needed
+
+#### Fow many differences is needed to make PM2.5 stationary?
+# 0 
 nsdiffs(m.season)
 
-#ACF and PACF inspection
+
+#### Correlation of all variables
+# There is a significant negative correlation between TEMP and PRES
+data2 %>% cor(method = 'pearson') %>% round(2)
+
+
+#### ACF and PACF inspection
 acf(m.season)
 pacf(m.season)
 
+
+#### Breusch-Godfrey test for serial correlation of the PM2.5 variable
+# Function from classes
+source("function_testdf.R")
+
+# For the PM2.5 variable
+a <- testdf(variable = data2$PM_US.Post, max.augmentations = 15, max.order = 15) %>% round(2)
+View(a)
+
+# For the differenced in the PM2.5 variable
+b <- testdf(variable = diff(data2$PM_US.Post), max.augmentations = 15, max.order = 15) %>% round(2)
+View(b)
+
+
+
+
+#################### ARIMA ######################
 #Modeling first ARIMA
 ms.arima <- auto.arima(m.season, trace = T, seasonal = TRUE, test = 'kpss', ic = 'bic')
 summary(ms.arima)
-
-#Decomposition Using TBATS
-tbats <- tbats(m.season)
-plot(tbats)
 
 #Prediction Using TBATS
 predict.season <- predict(tbats,h=365)
@@ -226,14 +288,9 @@ print(ARIMA.predictions.model.stats)
 
 
 
+#################### ARDL on sesonally adjusted monthly data from jDemetra ####################
 
-
-
-
-
-######### ARDL - sesonally adjusted monthly data from jDemetra (MICHALINA)
-
-# Loading the data from jDemetra
+# Loading the data exported from jDemetra
 PM <- read.csv('pm.txt', sep = "\t", dec = ',')
 tsPM <- ts(PM[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
@@ -692,17 +749,14 @@ r_squared(t0, pred)
 
 
 
-############## ARDL - MICHAŁ ##############
-
-dane.zoo <- as.zoo(data2)
-plot(dane.zoo)
-
-
-source("function_testdf.R")
-
-a <- testdf(variable = data2$PM_US.Post, max.augmentations = 10, max.order=10)
-
-b <- testdf(variable = diff(data2$PM_US.Post), max.augmentations = 3, max.order=5)           
+############## ARDL on hourly, daily and weekly data ##############
+#### The metodology is as follows
+# We start with hourly, daily and weekly data
+# And for each one we try to estimate both the value of PM2.5 as well as the differences
+# For start we use every variable, lagged in all suspected sesonalities
+# Finally, we choose one model in each type of data that performed the best
+# And we optimize it by removing insignificant variables
+# In the end, we run tests on these models
 
 # Hourly - Differences
 dynlm(d(PM_US.Post) ~
@@ -813,7 +867,6 @@ dynlm( PM_US.Post~
           L(Iprec, c(0, 1, 7, 30, 365)), data = dailyData) %>% summary() # 0.45
 
 
-
 # Daily - Values only from lag(1)
 dynlm( PM_US.Post ~ L(PM_US.Post), data = dailyData) %>% summary() # 0.35
 
@@ -855,8 +908,8 @@ dynlm( PM_US.Post~
          L(Iprec, c(0, 1, 4, 4 * 12)), data = weeklyData) %>% summary() # 0.5228
 
 
-############ ARDL v2 - Final models ##############
 
+#### Final models
 ## Hourly - Values (Optimized)
 hourlyARDL <- dynlm( PM_US.Post ~ 
          L(PM_US.Post) +
@@ -891,8 +944,8 @@ weeklyARDL %>% summary() # 0.54
 
 
 
-
-    ## Plots of the models
+#### Plots of the final models
+# Hourly
 par(mfrow=c(2,2))
 plot(hourlyARDL)
 # Residuals vs Fitted - mostly linear, some outliers
@@ -900,84 +953,140 @@ plot(hourlyARDL)
 # Scale-Location - values lie mostly in the left-hand side corner
 # Residuals vs Leverage - there is one observation outside the Cook's distance
 
+# Daily
 plot(dailyARDL)
 # Residuals vs Fitted - no extra patterns, the residuals form a pack in the middle
 # Normal Q-Q - some deviation from the dist in the extreme positive side
 # Scale-Location - The points are not spread out evenly, but sid mostly in the middle
 # Residuals vs Leverage - there is one observation outside the Cook's distance (different than the one in hourly)
 
+# Weekly
 plot(weeklyARDL)
 # Residuals vs Fitted - mostly linear
 # Normal Q-Q - very nice distribution, except for some outliers
 # Scale-Location - no patterns observed
 # Residuals vs Leverage - One significant outlier
-par(mfrow=c(1,1))
+par(mfrow=c(1,1)) # Don't forget to reset the plots grid 
 
 
 
-    ## Predictions 
-# Hourly
-hourlyARDL$fitted.values %>%  autoplot(color = "blue", alpha=0.5) + geom_line(data = data2, aes(y = PM_US.Post), color = "blue", alpha=0.3) # połączyć z realnymi danymi
+#### Comparing predictions with real data - on graphs
+## Hourly
+# The values are ver simmilar, only small differences can be seen
 ggplot() +
-  geom_line(data = as.data.frame(hourlyARDL$fitted.values), aes(x = c(1:length(hourlyARDL$fitted.values)), y = hourlyARDL$fitted.values), color = "red", alpha=0.8) +
-  geom_line(data = data2[1:length(hourlyARDL$fitted.values),], aes(x = c(1:length(hourlyARDL$fitted.values)), y = PM_US.Post), color = "green", alpha=0.5)
+  geom_line(data = as.data.frame(hourlyARDL$fitted.values),
+            aes(x = c(1:length(hourlyARDL$fitted.values)), 
+                y = hourlyARDL$fitted.values),
+            color = "red", 
+            alpha=0.8) +
+  geom_line(data = data2[1:length(hourlyARDL$fitted.values),],
+            aes(x = c(1:length(hourlyARDL$fitted.values)),
+                y = PM_US.Post), 
+            color = "green", 
+            alpha=0.5)
 
-# Daily
-dailyARDL$fitted.values %>%  autoplot(color = 'green') + geom_line(data = dailyData, aes(y = PM_US.Post), color = "blue", alpha=0.3) # połączyć z realnymi danymi
+## Daily
+# The model predicted the general trend well.
+# It wasn't able to predict the significant outliers, and it generated it's own that were not present in the data (mostly lower that average)
 ggplot() +
-  geom_line(data = as.data.frame(dailyARDL$fitted.values), aes(x = c(1:length(dailyARDL$fitted.values)), y = dailyARDL$fitted.values), color = "blue", alpha=0.8) +
-  geom_line(data = dailyData[1:length(dailyARDL$fitted.values),], aes(x = c(1:length(dailyARDL$fitted.values)), y = PM_US.Post), color = "green", alpha=0.5)
+  geom_line(data = as.data.frame(dailyARDL$fitted.values),
+            aes(x = c(1:length(dailyARDL$fitted.values)),
+                y = dailyARDL$fitted.values), 
+            color = "blue", 
+            alpha=0.8) +
+  geom_line(data = dailyData[1:length(dailyARDL$fitted.values),],
+            aes(x = c(1:length(dailyARDL$fitted.values)),
+                y = PM_US.Post), 
+            color = "green", 
+            alpha=0.5)
 
-# Weekly
-weeklyARDL$fitted.values %>%  autoplot(color = "blue", alpha=0.5) + geom_line(data = weeklyData, aes(y = PM_US.Post), color = "blue", alpha=0.3) # połączyć z realnymi danymi
+## Weekly
+# The model predicted the trend very well
+# Like previously, it wasn't able to predict the 3 outliers. It did not generate it's own
 ggplot() +
-  geom_line(data = as.data.frame(weeklyARDL$fitted.values), aes(x = c(1:length(weeklyARDL$fitted.values)), y = weeklyARDL$fitted.values), color = "red", alpha=0.8) +
-  geom_line(data = weeklyData[1:length(weeklyARDL$fitted.values),], aes(x = c(1:length(weeklyARDL$fitted.values)), y = PM_US.Post), color = "green", alpha=0.5)
+  geom_line(data = as.data.frame(weeklyARDL$fitted.values), 
+            aes(x = c(1:length(weeklyARDL$fitted.values)),
+                y = weeklyARDL$fitted.values), 
+            color = "red",
+            alpha=0.8) +
+  geom_line(data = weeklyData[1:length(weeklyARDL$fitted.values),], 
+            aes(x = c(1:length(weeklyARDL$fitted.values)), 
+                y = PM_US.Post), 
+            color = "green", 
+            alpha=0.5)
 
-###Opisać wykresy 
+
+#### Let's plot the residuals
+## Hourly
+# Some serious outliers, otherwise the residuals seem to form a stationary process
+hourlyARDL %>% 
+  residuals() %>% 
+  autoplot() 
+
+## Daily
+# Around 0, some sesonality can be observed
+dailyARDL %>% 
+  residuals() %>% 
+  autoplot()
+
+## Weekly
+# Some mild outliers, otherwise stationary
+weeklyARDL %>% 
+  residuals() %>% 
+  autoplot()
 
 
-
-    ## Residuals
-hourlyARDL %>% residuals() %>% autoplot() # Some serious outliers, otherwise the residuals seem to form a stationary process
-dailyARDL %>% residuals() %>% autoplot() # Around 0, bo some sesonality (!) can be observed
-weeklyARDL %>% residuals() %>% autoplot() # Some mild outliers, otherwise stationary
-
-    ## Breusch-Godfrey test for serial correlation
-# Hourly - Correlation
+#### Breusch-Godfrey test for serial correlation of the residuals
+## Hourly 
+# Correlation
 bgtest(residuals(hourlyARDL)~1, order = 1)
 bgtest(residuals(hourlyARDL)~1, order = 2)
 bgtest(residuals(hourlyARDL)~1, order = 3)
 bgtest(residuals(hourlyARDL)~1, order = 4)
 bgtest(residuals(hourlyARDL)~1, order = 5)
 
-# Daily - NO Correlation
+## Daily 
+# No Correlation
 bgtest(residuals(dailyARDL)~1, order = 1)
 bgtest(residuals(dailyARDL)~1, order = 2)
 bgtest(residuals(dailyARDL)~1, order = 3)
 bgtest(residuals(dailyARDL)~1, order = 4)
 bgtest(residuals(dailyARDL)~1, order = 5)
 
-# Weekly - NO Correlation
+## Weekly
+# No Correlation
 bgtest(residuals(weeklyARDL)~1, order = 1)
 bgtest(residuals(weeklyARDL)~1, order = 2)
 bgtest(residuals(weeklyARDL)~1, order = 3)
 bgtest(residuals(weeklyARDL)~1, order = 4)
 bgtest(residuals(weeklyARDL)~1, order = 5)
 
-    ## Jarque - Bera Normality Test of the residuals
-hourlyARDL %>% residuals() %>% as.matrix() %>% jbTest()
-dailyARDL %>% residuals() %>% as.matrix() %>% jbTest()
-weeklyARDL %>% residuals() %>% as.matrix() %>% jbTest()
+
+#### Jarque - Bera Normality Test of the residuals
 # Residuals are not normally distributed for all models
+hourlyARDL %>% 
+  residuals() %>% 
+  as.matrix() %>% 
+  jbTest()
 
-    ## Breusch-Pagan test for homoskedacity
-bptest(hourlyARDL,data=data2) # heteroscedasticity
-bptest(dailyARDL,data=dailyData) # heteroscedasticity
-bptest(weeklyARDL,data=weeklyData) # near the deciosion boundary, may be homoskedastic
+dailyARDL %>% 
+  residuals() %>% 
+  as.matrix() %>%
+  jbTest()
+
+weeklyARDL %>% 
+  residuals() %>%
+  as.matrix() %>%
+  jbTest()
 
 
+#### Breusch-Pagan test for homoskedacity
+hourlyARDL %>% bptest(data=data2) # heteroscedasticity
+dailyARDL  %>% bptest(data=dailyData) # heteroscedasticity
+weeklyARDL %>% bptest(data=weeklyData) # near the deciosion boundary, may be homoskedastic
 
+
+#### Final 
 
 
 
