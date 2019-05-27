@@ -645,7 +645,51 @@ bgtest(resids_~1, order = 5)
 
 #vif(ARDL18, data = timeseries)
 
-autoplot(ARDL18)
+ARDL18v1 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsDEWP)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+
+ARDL18v2 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
+
+#jbTest(as.matrix(residuals(ARDL18v2))) # residuals normally distributed 
+
+
+#bptest(ARDL18v2,data=timeseries, studentize=FALSE)
+#bptest(ARDL18v2,data=timeseries)  ##homoscedasticity 
+
+#resids_ <- ARDL18v2$residuals
+#bgtest(resids_~1, order = 1)
+#bgtest(resids_~1, order = 2)
+#bgtest(resids_~1, order = 3)
+#bgtest(resids_~1, order = 4)
+#bgtest(resids_~1, order = 5)
+
+
+
+timeseries.end <- floor(0.7*length(timeseries)/8) 
+timeseries.train <- timeseries[(1:timeseries.end),] 
+timeseries.test <- timeseries[(timeseries.end+1):(length(timeseries)/8),]
+
+timeseries.test <- as.data.frame(timeseries.test)
+timeseries <- as.zoo(timeseries)
+
+ARDL18v3 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES)) + L(d(tsPRES), 2), data = timeseries,start = c(2011, 12))
+
+pred <- predict(ARDL18v3, newdata = timeseries.test)
+t0 <- tail(diff(timeseries$tsPM)*(-1),14)
+
+pred
+t0
+
+mean_t0 <- mean(t0)
+
+SSE <- sum((t0 - pred) ^ 2)
+SST <- sum((t0 - mean_t0) ^ 2)
+r2 <- 1 - SSE/SST
+
+r_squared <- function(vals, preds) {
+  1 - (sum((vals*(-1) - preds)^2) / sum((vals - mean(preds))^2))
+}
+r_squared(t0, pred)
+
 
 
 ############## ARDL - MICHAŁ ##############
