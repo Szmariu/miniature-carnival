@@ -417,6 +417,8 @@ summary(adfs8) #stationary
 
 timeseries <- as.zoo(timeseries)
 
+###testing different possible ARDL models
+
 #1 lag
 ARDL <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
                 L(d(tsprecipitation)) + d(tslprec) + L(d(tslprec)) + d(tsTEMP) + L(d(tsTEMP)) + d(tsPRES) + L(d(tsPRES)), data = timeseries,start = c(2011, 12))
@@ -623,7 +625,7 @@ AIC(ARDL27)
 BIC(ARDL27)
 
 ##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
-##model statystyczny istotny p-Value < 0.05
+##model statistically significant p-value < 0.05
 
 #1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
 ARDL18 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
@@ -638,7 +640,6 @@ ARDL28 <- dynlm(d(tsPM) ~ d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(
 summary(ARDL28)
 AIC(ARDL28)
 BIC(ARDL28)
-
 
 #no lags in PM & DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
 ARDL29 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
@@ -676,7 +677,7 @@ AIC(ARDL33)
 BIC(ARDL33)
 
 ##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
-##model statystyczny istotny p-Value < 0.05
+##model statistically significant p-value < 0.05
 ###AIC i BIC im mniejszy tym lepszy
 
 autoplot(acf(ARDL18$residuals, type='correlation', plot = FALSE))
@@ -695,32 +696,24 @@ bgtest(resids_~1, order = 3)
 bgtest(resids_~1, order = 4)
 bgtest(resids_~1, order = 5)
 
-
-#resettest(fitted(ARDL18), data = timeseries)  ##model well fitted/ correctly specified
-#resettest(dynlm(d(tsPM)~L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP), 8) + L(d(tslws), 10)
-    #            + L(d(tsTEMP), 4), data = timeseries, start = c(2011,12)))
-
-#vif(ARDL18, data = timeseries)
-
 ARDL18v1 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsDEWP)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
 
 ARDL18v2 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
 
-#jbTest(as.matrix(residuals(ARDL18v2))) # residuals normally distributed 
+jbTest(as.matrix(residuals(ARDL18v2))) # residuals normally distributed 
 
 
-#bptest(ARDL18v2,data=timeseries, studentize=FALSE)
-#bptest(ARDL18v2,data=timeseries)  ##homoscedasticity 
+bptest(ARDL18v2,data=timeseries, studentize=FALSE)
+bptest(ARDL18v2,data=timeseries)  ##homoscedasticity 
 
-#resids_ <- ARDL18v2$residuals
-#bgtest(resids_~1, order = 1)
-#bgtest(resids_~1, order = 2)
-#bgtest(resids_~1, order = 3)
-#bgtest(resids_~1, order = 4)
-#bgtest(resids_~1, order = 5)
+resids_ <- ARDL18v2$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5) ##no autocorrelation
 
-
-
+##prediction
 timeseries.end <- floor(0.7*length(timeseries)/8) 
 timeseries.train <- timeseries[(1:timeseries.end),] 
 timeseries.test <- timeseries[(timeseries.end+1):(length(timeseries)/8),]
