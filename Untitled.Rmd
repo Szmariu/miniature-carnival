@@ -1,0 +1,19 @@
+---
+title: "Advanced Econometrics"
+author: "Krysiak-Szalanski-Cieslak"
+date: "26 05 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+x= 4+5
+print(x)
+
+
+```
+

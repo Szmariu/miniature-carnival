@@ -1,0 +1,292 @@
+---
+title: "Untitled"
+output:
+  pdf_document: 
+    fig_caption: true
+  html_document:
+    df_print: paged
+header-includes: \usepackage{caption}
+---
+```{r, eval=FALSE}
+
+list.of.packages <- c("dplyr", "xts","lmtest","tseries","urca","fUnitRoots","systemfit","plm","uroot","forecast","psych","lubridate","dynlm","akima","ggfortify","magrittr","multipanelfigure","formattable","knitr","tinytex","pacman","data.table","rmarkdown")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)>0) {install.packages(new.packages)}
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+library(dplyr)
+library(xts)
+library(lmtest)
+library(tseries)
+library(urca)
+library(fUnitRoots)
+library(systemfit)
+library(plm)
+library(uroot)
+library(forecast)
+library(psych)
+library("Hmisc")
+library(lubridate)
+library(dynlm)
+library(akima)
+library(ggfortify)
+library(magrittr)
+library(multipanelfigure)
+library(formattable)
+library(knitr)
+library(tinytex)
+library(pacman)
+library(data.table)
+library(rmarkdown)
+
+```
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, results='hide'}
+pacman::p_load(knitr, captioner, stringr)
+table_nums <- captioner::captioner(prefix = "Tab.")
+tab.1_cap <- table_nums(name = "tab_1", 
+                        caption = "Summary of the data")
+tab.2_cap <- table_nums(name = "tab_2", 
+                        caption = "Summary of ADF test with p-values for Breusch-Godfrey test")
+
+tab.3_cap <- table_nums(name = "tab_3", 
+                        caption = "Summary of significant varaibles from ARDL model")
+
+```
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+##LOAD DATA
+dane <- read.csv("./data/Shanghai.csv", dec = ".")
+dane$date <- NA
+dane$date <- paste(dane$year, dane$month, dane$day, dane$hour, sep =",")
+x <- "%Y, %m, %d, %H"
+dane$date<- as.POSIXct(strptime(dane$date, format = x)) 
+dane <-dane %>% select(-c('PM_Jingan', 'PM_Xuhui', 'No', 'cbwd'))
+dane <- na.omit(dane)
+write.csv(dane, file = "Shanghai2.csv",row.names=FALSE)
+data2 <- read.csv('./data/Shanghai2.csv')
+data2 <- xts(data2[,c('PM_US.Post',"DEWP", "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec', 
+                      'season')], order.by = as.POSIXct(data2[,"date"]), frequency = 24)
+
+
+#setwd('C:\\Users\\Michalina\\Desktop\\ekonometria\\adjusted')
+PM <- read.csv('./data/pm.txt', sep = "\t", dec = ',')
+tsPM <- ts(PM[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+DEWP <- read.csv('./data/DEWP.txt', sep = "\t", dec = ',')
+tsDEWP <- ts(DEWP[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+HUMI <- read.csv('./data/HUMI.txt', sep = "\t", dec = ',')
+tsHUMI <- ts(HUMI[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+lprec <- read.csv('./data/lprec.txt', sep = "\t", dec = ',')
+tslprec <- ts(lprec[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+lws <- read.csv('./data/lws.txt', sep = "\t", dec = ',')
+tslws <- ts(lws[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+PRES <- read.csv('./data/PRES.txt', sep = "\t", dec = ',')
+tsPRES <- ts(PRES[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+TEMP <- read.csv('./data/TEMP.txt', sep = "\t", dec = ',')
+tsTEMP <- ts(TEMP[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+precipitation <- read.csv('./data/precipitation.txt', sep = "\t", dec = ',')
+tsprecipitation <- ts(precipitation[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
+
+timeseries <- ts.union(tsPM, tsDEWP, tsHUMI, tslprec, tslws, tsPRES, tsTEMP, tsprecipitation)
+
+```
+###DATASET DESCRIPTION & EDA
+The original dataset, retrieved from UCI Machine Learning Repository, was collected for 5 Chinese cities and consists of hourly observations between January 1st, 2010 to December 31st, 2015. It contains information about PM2.5 concentration, as well as metrological details like dew point, temperature, humidity, pressure, combined wind direction, cumulated wind speed, hourly precipitation and cumulated precipitation.
+
+Our analysis focuses on Shanghai pollution problem with the complete observations gathered for the period of Dec 28th, 2011 to Dec 31st, 2015. The dataset lacks values for 24 days - between Jul 1st, 2014 and Jul 25th, 2014.
+
+``` {r, echo = FALSE,warning=FALSE, message=FALSE, fig.align = 'center',fig.cap=tab.1_cap}
+datadesc <- round(psych::describe((data2[,c(1:8)])),2)
+setattr(datadesc, "row.names", c("PM 2.5 conc.", "dew point", "humidity","pressure", "temperature", "cumul. wind speed", 'precipitation', "cumul. precip."))
+datadesc <- datadesc %>% select(-c(1:2,6))
+kable(datadesc)
+```
+
+All of the variables are rather highly dispearsed. In Shanghai, during the observed period, the concentration of fine particles with a diameter of 2.5 um ranged from almost non-existent (1 ug/$m^3$) to very large numbers (730 ug/$m^3$). The mean PM2.5 concentration for each year exceeds 50 ug/$m^3$ (with the value of 60 ug/$m^3$ in 2013), which is more than twice as much as standard treshold adopted in other countries\footnote{\label{note1}European Comission (http://ec.europa.eu/environment/air/quality/standards.htm), United States Environmental Protection Agency (https://www3.epa.gov/region1/airquality/pm-aq-standards.html)}. Furthermore, the values recorded in 2014 and 2015 are also higher than the annual averages for China\footnote{\label{note2}Lei Jiang et al.,"Comparison of Ground-Based PM2.5 and PM10 Concentrations in China, India, and the U.S.", International Journal of Environmental Research and Public Health 15, no.7 (2018)}. Skewness results indicate that 3 variables (dew point, pressure and temperature) are normally distributed. The other ones, except humidity, are highly negatively skewed.      
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,  fig.cap = 'Plot of PM 2.5 concentration', fig.width=8, fig.height=3.5}
+autoplot(data2$PM_US.Post, ts.colour = 'coral4', xlab = 'Year', ylab = 'Values')
+```
+According to Figure 1, PM2.5 concentration intensifies in winter and follows a pattern with relatively high peaks at the beginning of each year (one or two first months) and significant drop near July, which implies seasonality. Such behaviour is consistent with already conducted studies \footnote{\label{note3}Wei Meng et al., "Seasonal and diurnal variations of ambient PM2.5 concentration in urban and rural environments in Beijing", Atmospheric Environment 43, No.18 (2009);
+Yingjun Chen et al.,"Characteristics of organic and elemental carbon in PM2.5 samples in
+Shanghai, China", Atmospheric Research 92, No.4 (2009)}. Starting from 2013, from year to year, the highest values seem to be decreasing, which is confirmed in the means. The linear part visible after the 6th month in 2014 is associated with formerly mentioned lack of data.       
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.cap='Plots of dew point, temperature, humidity and pressure',fig.align = 'center'}
+x <- autoplot(data2$DEWP, main = "DEW point (C)", ts.colour = 'darkolivegreen3', xlab = 'Year', ylab = 'Values')
+y <- autoplot(data2$TEMP, main = "Temperature (C)", ts.colour = 'indianred4', xlab = 'Year', ylab = 'Values')
+z <- autoplot(data2$HUMI, main = "Humidity (%)", ts.colour = 'grey34', xlab = 'Year', ylab = 'Values')
+t <- autoplot(data2$PRES, main = "Pressure (hPa)", ts.colour = 'goldenrod3', xlab = 'Year', ylab = 'Values')
+
+figure <- multi_panel_figure(columns = 2, rows = 2, panel_label_type = "none")
+
+figure %<>%
+  fill_panel(x, column = 1, row = 1) %>%
+  fill_panel(y, column = 2, row = 1) %>%
+  fill_panel(z, column = 1, row = 2) %>%
+  fill_panel(t, column = 2, row = 2)
+print(figure)
+```
+
+Figure 2 shows, among others, the graphs for dew point and temperature. It can be noticed that they follow a similar pattern - minimum values obtained at the beginning and high peaks, more or less, in the middle of each year. This dependency can be easily explained by looking at the Magnus formula for dew point calculation\footnote{\label{note4} Wikipedia}, which takes into account two components: actual air temperature and relative humidity. Having that in mind, it becomes obvious that the dew point might be highly correlated with both of the variables. It can be further verified using the Pearson correlation. In the case of dew point and temperature, it is 88%, which confirms the presumption of correlation. For humidity, value is lower and equals to, around, 42%. 
+Pressure is another variable highly dependent on temperature, thus, showing also the relation with dew point. Here, we can examine negative correlation - peaks in the middle of each year, visible on the pressure graph, correspond to downs for two other variables.  
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.cap='Plots of cumulated precipitation, cumulated wind speed and hourly precipitation', fig.width=6, fig.height=3}
+autoplot(data2[,c('Iws', 'Iprec', 'precipitation')], xlab = 'Year', ylab = 'Values', ts.colour = 'black')
+```
+
+Cumulated and hourly precipitation are, not surprisingly, following a similar pattern (Figure 3). The correlation between those two variables is equal to 98%, which means that 98% of the time they move in the same direction. The highest fallouts were denoted during spring/summer period. Such behaviour is consistent with other studies investigating the relationship between seasons and meteorological conditions in Shanghai. They emphasize that precipitation is one of the main determinants of PM 2.5 concentration at this time of the year\footnote{\label{note5} Danlu Chen et al., "Understanding meteorological influences on PM2.5 concentrations across China: a temporal and spatial perspective", Atmospheric Chemistry and Physics 16, No.8 (2018)}. 
+The accumulated wind speed accrued and declined, more or less, randomly with a few outstanding peaks in the 2nd half of 2012, 2013 and 2015. Based on the graph analysis there is no certainty about the seasonality.  
+
+###ARDL ON NON-SEASONAL DATA
+
+In the case of seasonally adjusted data in JDemetra+, the variables do not correlate higher than 50%.
+```{r, echo = FALSE, warning=FALSE, message=FALSE} 
+##SUMMARY OF JDEMETRA+ DATA
+#datadesc <- round(psych::describe(as.data.frame(timeseries[,c(1:7)])),2)
+#kable(datadesc, caption = 'Table 1. Summary of data')
+```
+
+```{r, echo=FALSE, message=FALSE, warnings=FALSE, results='hide'}
+## stationarity on differences
+adfs1 <- ur.df(diff(timeseries[,c("tsPM")]), type = "none", lags = 2)
+resids_ <- adfs1@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs1) #stationary
+
+adfs2 <- ur.df(diff(timeseries[,c("tsHUMI")]), type = "none", lags = 1)
+resids_ <- adfs2@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs2) #stationary
+
+adfs3 <- ur.df(diff(timeseries[,c("tsDEWP")]), type = "none", lags = 1)
+resids_ <- adfs3@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs3) #stationary
+
+adfs4 <- ur.df(diff(timeseries[,c("tsTEMP")]), type = "none", lags = 0)
+resids_ <- adfs4@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs4) #stationary
+
+adfs5 <- ur.df(diff(timeseries[,c("tslprec")]), type = "none", lags = 2)
+resids_ <- adfs5@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs5) #stationary
+
+adfs6 <- ur.df(diff(timeseries[,c("tslws")]), type = "none", lags = 2)
+resids_ <- adfs6@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs6) #stationary
+
+adfs7 <- ur.df(diff(timeseries[,c("tsPRES")]), type = "none", lags = 1)
+resids_ <- adfs7@testreg$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5)
+summary(adfs7) #stationary
+```
+
+`r table_nums('tab_1')`
+```{r table2, echo=FALSE, message=FALSE, warnings=FALSE, results='asis', fig.cap=tab.2_cap}
+#require(pander)
+#panderOptions('table.split.table', Inf)
+#set.caption("Table 2. Summary of ADF test with p-values for Breusch-Godfrey test")
+tabl <- " 
+|  | values         | PM    | HUMI  | DEWP  | TEMP  | PRES  | lprec | lws  | prec |  |
+|--|:--------------:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:----:|:----:|--|
+|  |       lags     |  2    |   1   |   1   |   0   |    1  | 2     | 2    |  2   |  |
+|  | pv bgtest(1)   |0.58   |   0.53|   0.69| 0.73  |0.47   | 0.64  | 0.57 | 0.75 |  |
+|  | pv bgtest(2)   |0.24   |  0.60 |  0.79 | 0.28  |0.24   | 0.73  |0.77  |0.68  |  |
+|  | pv bgtest(3)   |0.16   | 0.11  | 0.29  | 0.05  |0.11   | 0.76  | 0.18 |  0.76|  |
+|  | pv bgtest(4)   |0.08   | 0.19  | 0.19  | 0.10  |0.18   | 0.69  |0.15  | 0.70 |  |
+|  | pv bgtest(5)   |0.07   | 0.28  | 0.13  | 0.11  |0.28   | 0.80  |0.24  | 0.70 |  |
+|  | t stats        |-7.62  | -7.02 | -7.16 | -10.32|-8.21  | -8.23 |-7.36 | -8.38|  |
+significance level: '***' 0.001, '**' 0.01, '*' 0.05, '.' 0.1
+"
+cat(tabl) 
+```
+
+
+According to the ADF test, calculated on differences with manually adjusted lags, all of the variables are stationary - the t-statistic is lower than the 5% critical value (-1.95), which indicates that the null hypothesis can be rejected. Lags were adjusted using the Breusch-Godfrey test for residuals serial correlation (of order up to from 1 to 5) - until all p-values were bigger than 0.05 significance level. 
+The model selection was based on the general-to-specific approach - different combinations of lags were tested and the formula with the lowest BIC and AIC value was chosen. First, we analyzed the behaviour of models, where all of the variables have the same number of lags. We selected the one with the smallest values for previously mentioned criterions. Then we tested several options by adding and subtracting the number of lags. Such deduction led to a model with 1 lag for PM2.5 concentration, dew point, cumulated precipitation and temperature, 1 and 2 lags for cumulated wind speed and pressure and 1,2 and 3 lags for humidity and hourly precipitation. The model is statistically significant, given the p-value close to 0, and 76% of the variation of the PM2.5 concentration can be explained by the input variables. According to the Breusch-Pagan test, the homoscedasticity is present (p-value = 0.851). Furthermore, residuals are normally distributed (null for Jarque-Bera test on residuals is not rejected) and there is no autocorrelation - p-values for the Breusch-Godfrey test (up to order) 5 is higher than 0.1.
+
+
+
+
+
+```{r table3, echo=FALSE, message=FALSE, warnings=FALSE, results='asis', fig.cap=tab.3_cap}
+#require(pander)
+#panderOptions('table.split.table', Inf)
+#set.caption("Table 3. Summary of significant varaibles from ARDL model")
+tabl <- " 
+|  |                     | coefficients  | t-value  |Pr(>t)      |  |
+|--|:--------------------|:-------------:|:--------:|:----------:|--|
+|  |L(d(tsPM))           |  -0.29424     |   -2.086 | 0.048274*  |  |
+|  |d(tsDEWP)            |  -1.65714     |   -1.013 | 0.321709   |  |
+|  |L(d(tsDEWP))         |  -2.43440     |   -1.791 | 0.086529.  |  |
+|  |d(tsHUMI)            |   0.22140     |    0.807 | 0.428196   |  |
+|  |L(d(tsHUMI),c(1:3))1 |   0.27420     |    1.094 | 0.285283   |  |
+|  |L(d(tsHUMI),c(1:3))2 |  -0.26614     |   -1.434 | 0.165156   |  |
+|  |L(d(tsHUMI),c(1:3))3 |   0.47688     |    2.329 | 0.029022*  |  |
+|  | d(tslws)            |  -0.26079     |   -3.809 | 0.000903***|  |
+|  |L(d(tslws), c(1:1))1 |   0.08873     |    1.204 | 0.240820   |  |
+|  |L(d(tslws), c(1:1))2 |   0.08268     |    1.145 | 0.263886   |  |
+|  |d(tsprec)            |  25.60625     |    0.875 | 0.390727   |  |
+|  |L(d(tsprec), c(1:3))1|  38.24913     |    1.256 | 0.221765   |  |
+|  |L(d(tsprec), c(1:3))2|  65.98071     |    3.335 | 0.002878** |  |
+|  |L(d(tsprec), c(1:3))3|  -9.93379     |   -0.502 | 0.620171   |  |
+|  | d(tslprec)          |  -1.46873     |   -0.914 | 0.370053   |  |
+|  |L(d(tslprec))        |  -0.53620     |   -0.365 | 0.718541   |  |
+|  | d(tsTEMP)           |   1.02034     |    0.430 | 0.671240   |  |
+|  |L(d(tsTEMP))         |  -0.16326     |   -0.079 | 0.937382   |  |
+|  |d(tsPRES)            |   0.03746     |    0.655 | 0.519182   |  |
+|  |L(d(tsPRES), c(1:2))1|   0.23981     |    4.467 | 0.000176***|  |
+|  |L(d(tsPRES), c(1:2))2|   0.12156     |    2.281 | 0.032141*  |  |
+significance level: '***' 0.001, '**' 0.01, '*' 0.05, '.' 0.1
+"
+cat(tabl) 
+```
+
+According to Table , in the ARDL model for non-seasonal data, there are 2 highly significant variables - differentiated cumulated wind speed (tslws) and the 1st lag of differentiated pressure (tsPRES). With a one unit increase in the 1st one mentioned, we can observe a 0.26 decrease of the dependent variable. In the case of pressure, the 2nd lag influences PM 2.5 concentration as well. It can be seen, that with an additional lag added, this variable has a smaller effect on the target variable. What is interesting, the previous period value of the dependent variable has an influence on $\Delta$PM 2.5 concentration in time $t_0$. One unit increase in the lag of the differentiated variable PM2.5 causes a 0.29 unit decrease of this variable in real time.     
+Moreover, the results show that the effect of precipitation, in comparison to all other regressors, is the highest. One unit increase in precipitation increases the value of PM2.5 concentration by 65. 
+In general, meteorological variables, that were found to be statistically significant in the ARDL model were listed as one of the most influential in various researches\footnote{\label{note5}}\footnote{\label{note6}
+Limini Jiao et al., "Influences of wind and precipitation on different-sized particulate matter concentrations (PM2.5, PM10, PM2.5?10)", Meteorology and Atmospheric Physics, (2017)}.
+
+
