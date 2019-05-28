@@ -23,57 +23,162 @@ library(formattable)
 
 
 
-################## DATA CLEANING and Manipulation ######################
+################## Data Cleaning ######################
+### Load the data
 dane <- read.csv("data/Shanghai.csv", dec = ".")
+
+# Create the date variable
 dane$date <- NA
 dane$date <- paste(dane$year, dane$month, dane$day, dane$hour, sep =",")
 x <- "%Y, %m, %d, %H"
 dane$date<- as.POSIXct(strptime(dane$date, format = x)) 
+
+# Remove unwanted variables
 dane <-dane %>% select(-c('PM_Jingan', 'PM_Xuhui', 'No', 'cbwd'))
+
+# Remove NAs
 dane <- na.omit(dane)
-write.csv(dane, file = "data/Shanghai2.csv",row.names=FALSE)
 
-data2 <- read.csv('data/Shanghai2.csv')
-data2 <- xts(data2[,c('PM_US.Post',"DEWP", "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec', 
-                      'season')], order.by = as.POSIXct(data2[,"date"]), frequency = 24)
-write.csv(as.data.frame(data2),"data/data2.csv")
+# Convert to XTS 
+data2 <- xts(data[,c('PM_US.Post',"DEWP", "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec', 'season')],
+             order.by = as.POSIXct(data2[,"date"]), 
+             frequency = 24)
 
-data3 <- ts(data2[,c('PM_US.Post', "HUMI", 'PRES', 'TEMP', 'Iws', 'precipitation', 'Iprec' )], frequency = 24)
+# Write the data to a CSV
+data2 %>% as.data.frame() %>% write.csv("data/data2.csv") 
 
-##PLOTTING to glimpse the data
 
+
+
+
+################## Data Manipulation ######################
+
+#### Generate daily data using mean values from each day. Median was also considered.
+periodicity(data2)
+dailyData <- data2 %>% apply.daily(mean)
+dailyData %>% as.zoo() %>% plot()
+periodicity(dailyData) # Make sure the daya is daily
+
+# Also generate weekly data
+weeklyData <- data2 %>% apply.weekly(mean) 
+weeklyData %>% as.zoo() %>% plot()
+periodicity(weeklyData)
+
+
+
+################## Basic EDA ######################
+# All variables
+data2 %>% as.zoo() %>% plot()
+
+# Our main variable - PM levels
 autoplot(data2$PM_US.Post, ts.colour = 'coral4', xlab = 'Year', ylab = 'Values')
+
+# Other significant variables
 x <- autoplot(data2$DEWP, main = "DEW point (C)", ts.colour = 'darkolivegreen3', xlab = 'Year', ylab = 'Values')
 y <- autoplot(data2$TEMP, main = "Temperature (C)", ts.colour = 'indianred4', xlab = 'Year', ylab = 'Values')
 z <- autoplot(data2$HUMI, main = "Humidity (%)", ts.colour = 'grey34', xlab = 'Year', ylab = 'Values')
 t <- autoplot(data2$PRES, main = "Pressure (hPa)", ts.colour = 'goldenrod3', xlab = 'Year', ylab = 'Values')
-
 figure <- multi_panel_figure(columns = 2, rows = 2, panel_label_type = "none")
-
-periodicity(dailyData)
-
 figure %<>%
   fill_panel(x, column = 1, row = 1) %>%
   fill_panel(y, column = 2, row = 1) %>%
   fill_panel(z, column = 1, row = 2) %>%
   fill_panel(t, column = 2, row = 2)
 print(figure)
-#### Convert to daily
-periodicity(data2)
-dailyData <- apply.daily(data2, mean) # Możemy tego używać w miejsce data2
-plot(as.zoo(dailyData))
-periodicity(dailyData)
 
+# The rest ot the variables
 autoplot(data2[,c('Iws', 'Iprec', 'precipitation')], xlab = 'Year', ylab = 'Values', ts.colour = 'black')
 
 
-#################### SARIMA - KORNEL ######################
-#Correlations
-round(cor(data2, method = 'pearson'),2)
-rcorr(data2, type = 'pearson')
- 
-#Creating Time Series
+
+
+
+
+################## Sesonality removal  ######################
+
+## Creating Time Series for ARIMA
 m.season <- msts(data2$PM_US.Post,seasonal.period=c(7,30,365.25),start = c(2012,1,1,1), end = c(2018,1,1,1))
+
+#### Decomposition the hourly PM2.5 Using TBATS
+tbats <- tbats(m.season)
+
+# Plot the results
+plot(tbats)
+tbats %>% 
+  tbats.components() %>% 
+  autoplot() 
+
+
+#### Let's try to decompose the DAILY PM variable to remove the sesonality
+tbatsDaily <-  dailyData$PM_US.Post %>%
+  msts(seasonal.period=c(7,30,365.25)) %>% # Define the sesonal periods 
+  tbats() 
+
+# Results look promising
+plot(tbatsDaily) 
+
+# Hoever, when plotting on the same graph a flaw with the level is visible
+# It's variance when compared to the original vairable is minimal - it might as well be a straing line.
+# This means that there is no point to use this decomposed variable in modeling.
+# It has to be noted, that this may be a result of the implementation of tbats. 
+tbatsDaily %>% 
+  tbats.components() %>% 
+  autoplot() 
+
+
+
+
+
+################## First tests ######################
+
+#### Perform Unit Root Test
+data2$PM_US.Post %>% 
+  ur.pp(type = c("Z-tau"), model = c("trend")) %>%
+  summary()
+# It looks like the first differences are stationary
+
+
+#### Fow many differences is needed to make PM2.5 stationary?
+# 0 
+nsdiffs(m.season)
+
+
+#### Correlation of all variables
+# There is a significant negative correlation between TEMP and PRES
+data2 %>% cor(method = 'pearson') %>% round(2)
+
+
+#### ACF and PACF inspection
+acf(m.season)
+pacf(m.season)
+
+
+#### Breusch-Godfrey test for serial correlation of the PM2.5 variable
+# Function from classes
+source("function_testdf.R")
+
+# For the PM2.5 variable
+a <- testdf(variable = data2$PM_US.Post, max.augmentations = 15, max.order = 15) %>% round(2)
+View(a)
+
+# For the differenced in the PM2.5 variable
+b <- testdf(variable = diff(data2$PM_US.Post), max.augmentations = 15, max.order = 15) %>% round(2)
+View(b)
+
+
+
+
+#################### ARIMA ######################
+m.season <- msts(data2$PM_US.Post,seasonal.period=c(7,30,365.25),start = c(2012,1,1), end = c(2015,1,1))
+plot(m.season)
+
+#Seasonality test
+hegy.out1 <- hegy.test(m.season, deterministic = c(1,0,1),lag.method = c("AIC"), maxlag = 31)
+print(hegy.out1)
+
+#Modeling first ARIMA
+ms.arima <- auto.arima(m.season, trace = T, seasonal = TRUE, test = 'kpss', ic = 'bic')
+summary(ms.arima)
 
 #Automatic differentiations needed
 nsdiffs(m.season)
@@ -82,36 +187,37 @@ nsdiffs(m.season)
 acf(m.season)
 pacf(m.season)
 
-#Modeling first ARIMA
-ms.arima <- auto.arima(m.season, trace = T, seasonal = TRUE, test = 'kpss', ic = 'bic')
-summary(ms.arima)
-
 #Decomposition Using TBATS
 tbats <- tbats(m.season)
 plot(tbats)
 
 #Prediction Using TBATS
-predict.season <- predict(tbats,h=365)
-plot(predict.season, main = "TBATS Forecast", include=365)
+predict.season <- predict(tbats,h=60)
+plot(predict.season, main = "TBATS Forecast", include=60)
 print(predict.season)
 
 #Prediction Using Linear Models
-time.series.data <- ts(data2$PM_US.Post, start = c(2016,1,1,1), frequency = 7)
+time.series.data <- ts(data2$PM_US.Post, start = c(2012,1,1), frequency = 12)
 mytslm <- tslm(time.series.data ~ trend + season)
-print(mytslm)
+mytslm2 <- tslm(m.season ~ trend + season)
+print(mytslm2)
 
 #Inspecting ARIMA residuals
-residuals.arima <- auto.arima(mytslm$residuals)
-residuals.Arima.Forecast <- forecast(residuals.arima, h=365)
+residuals.arima <- auto.arima(mytslm2$residuals)
+residuals.Arima.Forecast <- forecast(residuals.arima, h=60)
 residualsF <- as.numeric(residuals.Arima.Forecast$mean)
+plot(residuals.Arima.Forecast)
 
 #Inspecting regression residuals
-regression.Forecast <- forecast(mytslm,h=365)
+regression.Forecast <- forecast(mytslm2,h=60)
+plot(regression.Forecast)
 regressionF <- as.numeric(regression.Forecast$mean)
 
 #Combined Forecast
 forecastR <- regressionF+residualsF
 print(forecastR)
+plot(forecastR)
+lines(forecastR)
 
 #Cross Validation
 tbats.predictions.accuracy.list = list()
@@ -119,18 +225,19 @@ tbats.predictions.model.stats = list()
 tbats.plots = list()
 plots.recorder = list()
 
-for (i in 1:10){ 
-  nTest <- 14*i  
+for (i in 1:1){ 
+  nTest <- 60*i  
   nTrain <- length(m.season) - nTest 
   train <- window(m.season,start=decimal_date(as.Date("2012-01-01")),end=c(decimal_date(as.Date("2012-01-01")),nTrain))
-  test <- window(m.season, start=c(decimal_date(as.Date("2012-01-01")),nTrain+1), end=c(decimal_date(as.Date("2012-01-01")),nTrain+14))
+  test <- window(m.season, start=c(decimal_date(as.Date("2012-01-01")),nTrain+1), end=c(decimal_date(as.Date("2012-01-01")),nTrain+60))
   
   sample.tbats <- tbats(train)
-  sample.predict <- predict(sample.tbats,h=14)
-  sample.predict.graphs <- plot(sample.predict, main = "TBATS Forecast", include=14)
+  sample.predict <- predict(sample.tbats,h=60)
+  sample.predict.graphs <- plot(sample.predict, main = "TBATS Forecast", include=60)
+  plot(sample.predict)
   tbats.plots.info <- c(sample.predict.graphs)
   plots.recorder <- recordPlot()
-  plot.new()
+  #plot.new()
   
   cat("----------------------------------
       
@@ -150,7 +257,7 @@ for (i in 1:10){
   
   print(sample.predict$model)
   tbats.predictions.model.stats <- c(paste0("AIC interation no.",i,": ",sample.predict$model$AIC))
-
+  
 }
 
 print(tbats.predictions.accuracy.list)
@@ -162,21 +269,24 @@ print(plots.recorder)
 lmARIMA.predictions.accuracy.list = list()
 ARIMA.predictions.model.stats = list()
 
-for (i in 1:10){
-  nTest <- 14*i  
-  nTrain <- length(time.series.data)- nTest 
-  train <- window(time.series.data,start=decimal_date(as.Date("2012-01-01")),end=c(decimal_date(as.Date("2012-01-01")),nTrain))
-  test <- window(time.series.data, start=c(decimal_date(as.Date("2012-01-01")),nTrain+1), end=c(decimal_date(as.Date("2012-01-01")),nTrain+14))
+for (i in 1:1){
+  nTest <- 60*i  
+  nTrain <- length(m.season)- nTest 
+  train <- window(m.season,start=decimal_date(as.Date("2012-01-01")),end=c(decimal_date(as.Date("2012-01-01")),nTrain))
+  test <- window(m.season, start=c(decimal_date(as.Date("2012-01-01")),nTrain+1), end=c(decimal_date(as.Date("2012-01-01")),nTrain+60))
   
   trainlm <- tslm(train ~ trend + season)
-  trainlmf <- forecast(trainlm,h=14)
+  trainlmf <- forecast(trainlm,h=60)
   
   residauto <- auto.arima(trainlm$residuals)
-  residf <- forecast(residauto,h=14)
+  residf <- forecast(residauto,h=60)
   
   y <- as.numeric(trainlmf$mean)
   x <- as.numeric(residf$mean)
   sp <- x+y
+  
+  plot(sp)
+  lines(sp)
   
   cat("----------------------------------
       
@@ -186,10 +296,10 @@ for (i in 1:10){
       Test Set includes 14 time periods. Observations", nTrain+1, "to", nTrain+14,"
       
       ")
-  print(accuracy(sp,test))
-  lmARIMA.predictions.accuracy.list <- c(print(accuracy(sp,test)))
-  print(residauto)
-  ARIMA.predictions.model.stats <- c(residauto)
+  #print(accuracy(sp,test))
+  #lmARIMA.predictions.accuracy.list <- c(print(accuracy(sp,test)))
+  #print(residauto)
+  #ARIMA.predictions.model.stats <- c(residauto)
   
   cat("
       
@@ -201,14 +311,9 @@ print(ARIMA.predictions.model.stats)
 
 
 
+#################### ARDL on sesonally adjusted monthly data from jDemetra ####################
 
-
-
-
-
-
-######### ARDL - sesonally adjusted monthly data from jDemetra (MICHALINA)
-
+# Loading the data exported from jDemetra
 PM <- read.csv('pm.txt', sep = "\t", dec = ',')
 tsPM <- ts(PM[,'Seasonally.adjusted'], start = c(2011,12,1), end = c(2015,12, 1), frequency = 12)
 
@@ -334,6 +439,8 @@ bgtest(resids_~1, order = 5)
 summary(adfs8) #stationary
 
 timeseries <- as.zoo(timeseries)
+
+###testing different possible ARDL models
 
 #1 lag
 ARDL <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI)) + d(tslws) + L(d(tslws)) + d(tsprecipitation) + 
@@ -541,7 +648,7 @@ AIC(ARDL27)
 BIC(ARDL27)
 
 ##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
-##model statystyczny istotny p-Value < 0.05
+##model statistically significant p-value < 0.05
 
 #1 lags in PM & 1 lag in DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
 ARDL18 <- dynlm(d(tsPM) ~ L(d(tsPM)) + d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
@@ -556,7 +663,6 @@ ARDL28 <- dynlm(d(tsPM) ~ d(tsDEWP) + L(d(tsDEWP)) + d(tsHUMI) + L(d(tsHUMI), c(
 summary(ARDL28)
 AIC(ARDL28)
 BIC(ARDL28)
-
 
 #no lags in PM & DEWP & 1:3 lags in HUMI & 1:2 lags in lws & 1:3 lags in precipitation & 1 lag in lprec & 1 lag in TEMP & 1:2 lags in PRES
 ARDL29 <- dynlm(d(tsPM) ~ d(tsDEWP) + d(tsHUMI) + L(d(tsHUMI), c(1:3)) + d(tslws) + L(d(tslws), c(1:2)) + d(tsprecipitation) + 
@@ -594,7 +700,7 @@ AIC(ARDL33)
 BIC(ARDL33)
 
 ##best ARDL18 (AIC = 305.763 & BIC = 347.3162)
-##model statystyczny istotny p-Value < 0.05
+##model statistically significant p-value < 0.05
 ###AIC i BIC im mniejszy tym lepszy
 
 autoplot(acf(ARDL18$residuals, type='correlation', plot = FALSE))
@@ -613,181 +719,393 @@ bgtest(resids_~1, order = 3)
 bgtest(resids_~1, order = 4)
 bgtest(resids_~1, order = 5)
 
+ARDL18v1 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsDEWP)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
 
-#resettest(fitted(ARDL18), data = timeseries)  ##model well fitted/ correctly specified
-#resettest(dynlm(d(tsPM)~L(d(tsPM), c(1:3)) + d(tsDEWP) + L(d(tsDEWP), 8) + L(d(tslws), 10)
-    #            + L(d(tsTEMP), 4), data = timeseries, start = c(2011,12)))
+ARDL18v2 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES), c(1:2)), data = timeseries,start = c(2011, 12))
 
-#vif(ARDL18, data = timeseries)
-
-autoplot(ARDL18)
+jbTest(as.matrix(residuals(ARDL18v2))) # residuals normally distributed 
 
 
-############## ARDL - MICHAŁ ##############
+bptest(ARDL18v2,data=timeseries, studentize=FALSE)
+bptest(ARDL18v2,data=timeseries)  ##homoscedasticity 
 
-dane.zoo <- as.zoo(data2)
-plot(dane.zoo)
+resids_ <- ARDL18v2$residuals
+bgtest(resids_~1, order = 1)
+bgtest(resids_~1, order = 2)
+bgtest(resids_~1, order = 3)
+bgtest(resids_~1, order = 4)
+bgtest(resids_~1, order = 5) ##no autocorrelation
 
-m.season <- msts(data2$PM_US.Post,seasonal.period=c(7,30,365.25),start = c(2012,1,1,1), end = c(2018,1,1,1))
-#m.season <- msts(data2$PM_US.Post,seasonal.period=c(24 , 24 * 7, 24 * 30,24 * 365.25))
+##prediction
+timeseries.end <- floor(0.7*length(timeseries)/8) 
+timeseries.train <- timeseries[(1:timeseries.end),] 
+timeseries.test <- timeseries[(timeseries.end+1):(length(timeseries)/8),]
 
-#tbats <- tbats(m.season, use.box.cox = TRUE, use.trend = TRUE, use.damped.trend = TRUE, seasonal.periods = c(24 , 24 * 7, 24 * 30, 24 * 365.25), use.parallel = TRUE, num.cores = NULL)
-#plot(tbats)
+timeseries.test <- as.data.frame(timeseries.test)
+timeseries <- as.zoo(timeseries)
 
-#tbats2 <- tbats.components(tbats)
-#View(tbats2)
-#plot(tbats2)
+ARDL18v3 <- dynlm(d(tsPM) ~ L(d(tsPM)) + L(d(tsHUMI), 3) + d(tslws) + L(d(tsprecipitation), 2) + L(d(tsPRES)) + L(d(tsPRES), 2), data = timeseries,start = c(2011, 12))
 
+pred <- predict(ARDL18v3, newdata = timeseries.test)
+t0 <- tail(diff(timeseries$tsPM)*(-1),14)
 
-source("function_testdf.R")
+pred
+t0
 
-testdf(variable = data2$PM_US.Post, # vector tested
-       max.augmentations = 3, max.order=5)  # maximum number of augmentations added
+mean_t0 <- mean(t0)
 
-testdf(variable = diff(USA[,c("consumption")]), # vector tested
-       max.augmentations = 3,  # maximum number of augmentations added
-       max.order=5)           # maximum order of residual lags for BG test
+SSE <- sum((t0 - pred) ^ 2)
+SST <- sum((t0 - mean_t0) ^ 2)
+r2 <- 1 - SSE/SST
 
-# Na różnicach
-ARDL <- dynlm( d(PM_US.Post) ~ 
-                 #d(PM_US.Post, 2) +
-                 L(d(PM_US.Post), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(DEWP) + 
-                 d(DEWP, 24) + 
-                 d(DEWP, 24 * 7) + 
-                 d(DEWP, 24 * 30) + 
-                 d(DEWP, 24 * 365) + 
-                 L(d(DEWP), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(HUMI) + 
-                 d(HUMI, 24) + 
-                 d(HUMI, 24 * 7) + 
-                 d(HUMI, 24 * 30) + 
-                 d(HUMI, 24 * 365) + 
-                 L(d(HUMI), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(PRES) + 
-                 d(PRES, 24) + 
-                 d(PRES, 24 * 7) + 
-                 d(PRES, 24 * 30) + 
-                 d(PRES, 24 * 365) + 
-                 L(d(PRES), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(TEMP) + 
-                 d(TEMP, 24) + 
-                 d(TEMP, 24 * 7) + 
-                 d(TEMP, 24 * 30) + 
-                 d(TEMP, 24 * 365) + 
-                 L(d(TEMP), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(Iws) + 
-                 d(Iws, 24) + 
-                 d(Iws, 24 * 7) + 
-                 d(Iws, 24 * 30) + 
-                 d(Iws, 24 * 365) + 
-                 L(d(Iws), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(precipitation) + 
-                 d(precipitation, 24) + 
-                 d(precipitation, 24 * 7) + 
-                 d(precipitation, 24 * 30) + 
-                 d(precipitation, 24 * 365) + 
-                 L(d(precipitation), c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                 d(Iprec) +
-                 d(Iprec, 24) + 
-                 d(Iprec, 24 * 7) + 
-                 d(Iprec, 24 * 30) + 
-                 d(Iprec, 24 * 365) + 
-                 L(d(Iprec), c(1, 24, 24 * 7, 24 * 30, 24 * 365)), data = data2)
-
-
-summary(ARDL)
-AIC(ARDL)
-BIC(ARDL)
-
-# Na wartościach
-ARDL2 <- dynlm( PM_US.Post~ 
-                  L(PM_US.Post, c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                  DEWP+ 
-                  L(DEWP, c(1, 24, 24 * 7, 24 * 30, 24 * 365)) +
-                  HUMI+ 
-                  L(HUMI, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  PRES+ 
-                  L(PRES, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  TEMP+ 
-                  L(TEMP, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  Iws+ 
-                  L(Iws, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  precipitation+ 
-                  L(precipitation, c(1, 24, 24 * 7, 24 * 30, 24 * 365))+
-                  Iprec +
-                  L(Iprec, c(1, 24, 24 * 7, 24 * 30, 24 * 365)), data = data2)
-
-
-summary(ARDL2)
-AIC(ARDL2)
-BIC(ARDL2)
+r_squared <- function(vals, preds) {
+  1 - (sum((vals*(-1) - preds)^2) / sum((vals - mean(preds))^2))
+}
+r_squared(t0, pred)
 
 
 
+############## ARDL on hourly, daily and weekly data ##############
+#### The metodology is as follows
+# We start with hourly, daily and weekly data
+# And for each one we try to estimate both the value of PM2.5 as well as the differences
+# For start we use every variable, lagged in all suspected sesonalities
+# Finally, we choose one model in each type of data that performed the best
+# And we optimize it by removing insignificant variables
+# In the end, we run tests on these models
+
+# Hourly - Differences
+dynlm(d(PM_US.Post) ~
+        L(d(PM_US.Post), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(DEWP) + 
+        d(DEWP, 24) + 
+        d(DEWP, 24 * 7) + 
+        d(DEWP, 24 * 30) + 
+        d(DEWP, 24 * 365) + 
+        L(d(DEWP), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(HUMI) + 
+        d(HUMI, 24) + 
+        d(HUMI, 24 * 7) + 
+        d(HUMI, 24 * 30) + 
+        d(HUMI, 24 * 365) + 
+        L(d(HUMI), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(PRES) + 
+        d(PRES, 24) + 
+        d(PRES, 24 * 7) + 
+        d(PRES, 24 * 30) + 
+        d(PRES, 24 * 365) + 
+        L(d(PRES), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(TEMP) + 
+        d(TEMP, 24) + 
+        d(TEMP, 24 * 7) + 
+        d(TEMP, 24 * 30) + 
+        d(TEMP, 24 * 365) + 
+        L(d(TEMP), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(Iws) + 
+        d(Iws, 24) + 
+        d(Iws, 24 * 7) + 
+        d(Iws, 24 * 30) + 
+        d(Iws, 24 * 365) + 
+        L(d(Iws), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(precipitation) + 
+        d(precipitation, 24) + 
+        d(precipitation, 24 * 7) + 
+        d(precipitation, 24 * 30) + 
+        d(precipitation, 24 * 365) + 
+        L(d(precipitation), c(1, 24 * 7, 24 * 30, 24 * 365)) +
+        d(Iprec) +
+        d(Iprec, 24) + 
+        d(Iprec, 24 * 7) + 
+        d(Iprec, 24 * 30) + 
+        d(Iprec, 24 * 365) + 
+        L(d(Iprec), c(1, 24 * 7, 24 * 30, 24 * 365)), data = data2) %>% summary() # 0.02
+
+# Hourly - Values
+dynlm( PM_US.Post ~ 
+          L(PM_US.Post, c(1, 24 * 7, 24 * 30, 24 * 365)) +
+          L(DEWP, c(0, 1, 24 * 7, 24 * 30, 24 * 365)) +
+          L(HUMI, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(PRES, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(TEMP, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(Iws, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(precipitation, c(0, 1, 24 * 7, 24 * 30, 24 * 365))+
+          L(Iprec, c(0, 1, 24 * 7, 24 * 30, 24 * 365)), data = data2) %>% summary() # 0.88
+
+# Daily - Differences
+dynlm( d(PM_US.Post) ~ 
+         d(PM_US.Post, 2) +
+         L(d(PM_US.Post), c(1, 7, 30, 365)) +
+         d(DEWP) + 
+         d(DEWP, 7) + 
+         d(DEWP, 30) + 
+         d(DEWP, 365) + 
+         L(d(DEWP), c(1, 7, 30, 365)) +
+         d(HUMI) + 
+         d(HUMI, 7) + 
+         d(HUMI, 30) + 
+         d(HUMI, 365) + 
+         L(d(HUMI), c(1, 7, 30, 365)) +
+         d(PRES) + 
+         d(PRES, 7) + 
+         d(PRES, 30) + 
+         d(PRES, 365) + 
+         L(d(PRES), c(1, 7, 30, 365)) +
+         d(TEMP) + 
+         d(TEMP, 7) + 
+         d(TEMP, 30) + 
+         d(TEMP, 365) + 
+         L(d(TEMP), c(1, 7, 30, 365)) +
+         d(Iws) + 
+         d(Iws, 7) + 
+         d(Iws, 30) + 
+         d(Iws, 365) + 
+         L(d(Iws), c(1, 7, 30, 365)) +
+         d(precipitation) +  
+         d(precipitation, 7) + 
+         d(precipitation, 30) + 
+         d(precipitation, 365) + 
+         L(d(precipitation), c(1, 7, 30, 365)) +
+         d(Iprec) + 
+         d(Iprec, 7) + 
+         d(Iprec, 30) + 
+         d(Iprec, 365) + 
+         L(d(Iprec), c(1, 7, 30, 365)), data = dailyData) %>% summary() # 0.15
+
+# Daily - Values
+dynlm( PM_US.Post~ 
+          L(PM_US.Post, c(1, 7, 30, 365)) +
+          L(DEWP, c(0, 1, 7, 30, 365)) +
+          L(HUMI, c(0, 1, 7, 30, 365))+
+          L(PRES, c(0, 1, 7, 30, 365))+
+          L(TEMP, c(0, 1, 7, 30, 365))+
+          L(Iws, c(0, 1, 7, 30, 365))+
+          L(precipitation, c(0, 1, 7, 30, 365))+
+          L(Iprec, c(0, 1, 7, 30, 365)), data = dailyData) %>% summary() # 0.45
+
+
+# Daily - Values only from lag(1)
+dynlm( PM_US.Post ~ L(PM_US.Post), data = dailyData) %>% summary() # 0.35
+
+# Weekly - Differences
+dynlm(d(PM_US.Post) ~
+        d(PM_US.Post, 2) +
+        L(d(PM_US.Post), c(1, 4, 4 * 12)) +
+        d(DEWP, 4) + 
+        d(DEWP, 4 * 12) + 
+        L(d(DEWP), c(0, 1, 4, 4 * 12)) +
+        d(HUMI, 4) + 
+        d(HUMI, 4 * 12) + 
+        L(d(HUMI), c(0, 1, 4, 4 * 12)) +
+        d(PRES, 4) + 
+        d(PRES, 4 * 12) +  
+        L(d(PRES), c(0, 1, 4, 4 * 12)) +
+        d(TEMP, 4) + 
+        d(TEMP, 4 * 12) +  
+        L(d(TEMP), c(0, 1, 4, 4 * 12)) +
+        d(Iws, 4) + 
+        d(Iws, 4 * 12) +  
+        L(d(Iws), c(0, 1, 4, 4 * 12)) +
+        d(precipitation, 4) + 
+        d(precipitation, 4 * 12) +  
+        L(d(precipitation), c(0, 1, 4, 4 * 12)) +
+        d(Iprec, 4) + 
+        d(Iprec, 4 * 12) + 
+        L(d(Iprec), c(0, 1, 4, 4 * 12)), data = weeklyData) %>% summary() # 0.5219
+
+# Weekly - Values
+dynlm( PM_US.Post~ 
+         L(PM_US.Post, c(1, 4, 4 * 12)) +
+         L(DEWP, c(0, 1, 4, 4 * 12)) +
+         L(HUMI, c(0, 1, 4, 4 * 12))+
+         L(PRES, c(0, 1, 4, 4 * 12))+
+         L(TEMP, c(0, 1, 4, 4 * 12))+
+         L(Iws, c(0, 1, 4, 4 * 12))+
+         L(precipitation, c(0, 1, 4, 4 * 12))+
+         L(Iprec, c(0, 1, 4, 4 * 12)), data = weeklyData) %>% summary() # 0.5228
+
+
+
+#### Final models
+## Hourly - Values (Optimized)
+hourlyARDL <- dynlm( PM_US.Post ~ 
+         L(PM_US.Post) +
+         L(DEWP, c(0, 1, 24 * 365)) +
+         L(HUMI, c(0, 1))+
+         L(PRES, c(24 * 30))+
+         L(TEMP, c(0, 1, 24 * 7))+
+         Iws, data = data2) 
+hourlyARDL %>% summary() # 0.89
+
+## Daily - Values (Optimized)
+dailyARDL <- dynlm( PM_US.Post ~ 
+         L(PM_US.Post, c(1, 10)) +
+         L(HUMI) +
+         L(TEMP) +
+         Iws+ 
+         L(Iws)+
+         precipitation, data = dailyData) 
+dailyARDL %>% summary() # 0.44
+
+## Weekly - Values (Optimized)
+weeklyARDL <- dynlm( PM_US.Post~ 
+         L(PM_US.Post) +
+         DEWP +
+         L(DEWP, 4) +
+         PRES +
+         L(TEMP)+
+         Iws +
+         precipitation + 
+         L(precipitation, 4), data = weeklyData) 
+weeklyARDL %>% summary() # 0.54
+
+
+
+#### Plots of the final models
+# Hourly
+par(mfrow=c(2,2))
+plot(hourlyARDL)
+# Residuals vs Fitted - mostly linear, some outliers
+# Normal Q-Q - follows strictly the normal dist, exept for the most extreme values that are way off
+# Scale-Location - values lie mostly in the left-hand side corner
+# Residuals vs Leverage - there is one observation outside the Cook's distance
+
+# Daily
+plot(dailyARDL)
+# Residuals vs Fitted - no extra patterns, the residuals form a pack in the middle
+# Normal Q-Q - some deviation from the dist in the extreme positive side
+# Scale-Location - The points are not spread out evenly, but sid mostly in the middle
+# Residuals vs Leverage - there is one observation outside the Cook's distance (different than the one in hourly)
+
+# Weekly
+plot(weeklyARDL)
+# Residuals vs Fitted - mostly linear
+# Normal Q-Q - very nice distribution, except for some outliers
+# Scale-Location - no patterns observed
+# Residuals vs Leverage - One significant outlier
+par(mfrow=c(1,1)) # Don't forget to reset the plots grid 
+
+
+
+#### Comparing predictions with real data - on graphs
+## Hourly
+# The values are ver simmilar, only small differences can be seen
+ggplot() +
+  geom_line(data = as.data.frame(hourlyARDL$fitted.values),
+            aes(x = c(1:length(hourlyARDL$fitted.values)), 
+                y = hourlyARDL$fitted.values),
+            color = "red", 
+            alpha=0.8) +
+  geom_line(data = data2[1:length(hourlyARDL$fitted.values),],
+            aes(x = c(1:length(hourlyARDL$fitted.values)),
+                y = PM_US.Post), 
+            color = "green", 
+            alpha=0.5)
+
+## Daily
+# The model predicted the general trend well.
+# It wasn't able to predict the significant outliers, and it generated it's own that were not present in the data (mostly lower that average)
+ggplot() +
+  geom_line(data = as.data.frame(dailyARDL$fitted.values),
+            aes(x = c(1:length(dailyARDL$fitted.values)),
+                y = dailyARDL$fitted.values), 
+            color = "blue", 
+            alpha=0.8) +
+  geom_line(data = dailyData[1:length(dailyARDL$fitted.values),],
+            aes(x = c(1:length(dailyARDL$fitted.values)),
+                y = PM_US.Post), 
+            color = "green", 
+            alpha=0.5)
+
+## Weekly
+# The model predicted the trend very well
+# Like previously, it wasn't able to predict the 3 outliers. It did not generate it's own
+ggplot() +
+  geom_line(data = as.data.frame(weeklyARDL$fitted.values), 
+            aes(x = c(1:length(weeklyARDL$fitted.values)),
+                y = weeklyARDL$fitted.values), 
+            color = "red",
+            alpha=0.8) +
+  geom_line(data = weeklyData[1:length(weeklyARDL$fitted.values),], 
+            aes(x = c(1:length(weeklyARDL$fitted.values)), 
+                y = PM_US.Post), 
+            color = "green", 
+            alpha=0.5)
+
+
+#### Let's plot the residuals
+## Hourly
+# Some serious outliers, otherwise the residuals seem to form a stationary process
+hourlyARDL %>% 
+  residuals() %>% 
+  autoplot() 
+
+## Daily
+# Around 0, some sesonality can be observed
+dailyARDL %>% 
+  residuals() %>% 
+  autoplot()
+
+## Weekly
+# Some mild outliers, otherwise stationary
+weeklyARDL %>% 
+  residuals() %>% 
+  autoplot()
+
+
+#### Breusch-Godfrey test for serial correlation of the residuals
+## Hourly 
+# Correlation
+bgtest(residuals(hourlyARDL)~1, order = 1)
+bgtest(residuals(hourlyARDL)~1, order = 2)
+bgtest(residuals(hourlyARDL)~1, order = 3)
+bgtest(residuals(hourlyARDL)~1, order = 4)
+bgtest(residuals(hourlyARDL)~1, order = 5)
+
+## Daily 
+# No Correlation
+bgtest(residuals(dailyARDL)~1, order = 1)
+bgtest(residuals(dailyARDL)~1, order = 2)
+bgtest(residuals(dailyARDL)~1, order = 3)
+bgtest(residuals(dailyARDL)~1, order = 4)
+bgtest(residuals(dailyARDL)~1, order = 5)
+
+## Weekly
+# No Correlation
+bgtest(residuals(weeklyARDL)~1, order = 1)
+bgtest(residuals(weeklyARDL)~1, order = 2)
+bgtest(residuals(weeklyARDL)~1, order = 3)
+bgtest(residuals(weeklyARDL)~1, order = 4)
+bgtest(residuals(weeklyARDL)~1, order = 5)
+
+
+#### Jarque - Bera Normality Test of the residuals
+# Residuals are not normally distributed for all models
+hourlyARDL %>% 
+  residuals() %>% 
+  as.matrix() %>% 
+  jbTest()
+
+dailyARDL %>% 
+  residuals() %>% 
+  as.matrix() %>%
+  jbTest()
+
+weeklyARDL %>% 
+  residuals() %>%
+  as.matrix() %>%
+  jbTest()
+
+
+#### Breusch-Pagan test for homoskedacity
+hourlyARDL %>% bptest(data=data2) # heteroscedasticity
+dailyARDL  %>% bptest(data=dailyData) # heteroscedasticity
+weeklyARDL %>% bptest(data=weeklyData) # near the deciosion boundary, may be homoskedastic
+
+
+#### Final 
 
 
 
 
 
-
-
-
-
-
-
-
-#########################DO NOT INCLUDE - nie wiem do czego to?? ###################################################
-
-#Creating Time Series
-data3 <- ts(dane$PM_US.Post, frequency=365, start = c(2016,1,1,1), end = c(2018,1,1,1))
-
-#Automatic differentiations needed
-nsdiffs(data3)
-
-#fitting best ARIMA
-acf(data3)
-pacf(data3)
-
-#Modeling first ARIMA
-arima <- auto.arima(data3, trace = T, seasonal = TRUE, test = 'kpss', ic = 'bic')
-
-#Decomposing time series with respect to seasonality
-decomp <- stl(data3, s.window='periodic')
-decomposition <- decompose(data3)
-deseasonal_cnt <- seasadj(decomp)
-
-#Plotting results
-plot(decomp)
-plot(decomposition)
-plot(deseasonal_cnt)
-
-#Fitting arima for deseasoned time series
-acf(deseasonal_cnt)
-pacf(deseasonal_cnt)
-
-arima.decomposed <- auto.arima(deseasonal_cnt, trace = T, seasonal = FALSE, test = 'kpss', ic = 'bic')
-
-#ADF Test for stationarity in deasesoned data
-adf.test(deseasonal_cnt, alternative='stationary')
-
-#display Time series for modeled ARIMAs
-tsdisplay(residuals(arima), lag.max=32, main='1,1,0 Model Residuals')
-tsdisplay(residuals(arima.decomposed), lag.max=32, main='1,1,0 Model Residuals')
-
-#ACF and PACF by ARIMA Residuals
-acf(arima$residuals, lag.max = 32)
-pacf(arima$residuals, lag.max = 32)
-
-#Tests
-jotest=ca.jo(data2, type="trace", K=2, ecdet="none", spec="longrun")
-summary(jotest)
-
-source('function_testdf.R')
-   
-  testdf(variable = diff(arima), # vector tested
-         max.augmentations = 5,  # maximum number of augmentations added
-         max.order=5)           # maximum order of residual lags for BG test
-
-###################################################################################
 
